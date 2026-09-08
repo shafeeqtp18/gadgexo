@@ -1,0 +1,47 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /*
+    GadGexo theme tokens (HSL triplets, no hsl() wrapper, so Tailwind's
+    opacity modifiers work). Dark is the default brand experience;
+    .light remaps the same tokens for light mode.
+  */
+  :root {
+    --background: 234 60% 5%;   /* #050814 dark base */
+    --foreground: 220 33% 98%;  /* #F7F8FB */
+    --surface: 234 45% 8%;
+    --muted: 234 24% 18%;
+    --muted-foreground: 220 15% 65%;
+    --border: 234 24% 18%;
+    --input: 234 24% 18%;
+    --ring: 262 100% 58%;       /* gadgexo purple */
+    --radius: 0.75rem;
+  }
+
+  .light {
+    --background: 220 33% 98%;  /* #F7F8FB */
+    --foreground: 234 60% 5%;   /* #050814 */
+    --surface: 0 0% 100%;
+    --muted: 220 20% 92%;
+    --muted-foreground: 226 15% 40%;
+    --border: 220 20% 88%;
+    --input: 220 20% 88%;
+    --ring: 262 100% 58%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+}
+
+@layer utilities {
+  .text-gradient-gadgexo {
+    @apply bg-gadgexo-gradient bg-clip-text text-transparent;
+  }
+}
