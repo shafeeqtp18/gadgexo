@@ -3,45 +3,99 @@
 @tailwind utilities;
 
 @layer base {
-  /*
-    GadGexo theme tokens (HSL triplets, no hsl() wrapper, so Tailwind's
-    opacity modifiers work). Dark is the default brand experience;
-    .light remaps the same tokens for light mode.
-  */
   :root {
-    --background: 234 60% 5%;   /* #050814 dark base */
-    --foreground: 220 33% 98%;  /* #F7F8FB */
+    --background: 234 60% 5%;        /* #050814 */
+    --foreground: 220 33% 98%;       /* #F7F8FB */
     --surface: 234 45% 8%;
+    --surface-elevated: 234 38% 11%;
+    --card: 234 38% 11%;
+    --card-foreground: 220 33% 98%;
     --muted: 234 24% 18%;
     --muted-foreground: 220 15% 65%;
     --border: 234 24% 18%;
     --input: 234 24% 18%;
-    --ring: 262 100% 58%;       /* gadgexo purple */
+    --ring: 262 100% 58%;
+
+    --primary: 262 100% 58%;         /* #8A2DFF */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 222 100% 63%;       /* #4B7BFF */
+    --secondary-foreground: 0 0% 100%;
+    --accent: 189 100% 50%;          /* #00D9FF */
+    --accent-foreground: 234 60% 5%;
+
+    --success: 152 60% 42%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 234 60% 5%;
+    --error: 0 72% 55%;
+    --error-foreground: 0 0% 100%;
+    --info: 205 90% 55%;
+    --info-foreground: 0 0% 100%;
+
     --radius: 0.75rem;
   }
 
   .light {
-    --background: 220 33% 98%;  /* #F7F8FB */
-    --foreground: 234 60% 5%;   /* #050814 */
+    --background: 220 33% 98%;
+    --foreground: 234 60% 5%;
     --surface: 0 0% 100%;
+    --surface-elevated: 220 25% 96%;
+    --card: 0 0% 100%;
+    --card-foreground: 234 60% 5%;
     --muted: 220 20% 92%;
     --muted-foreground: 226 15% 40%;
     --border: 220 20% 88%;
     --input: 220 20% 88%;
     --ring: 262 100% 58%;
+
+    --primary: 262 100% 50%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 222 90% 55%;
+    --secondary-foreground: 0 0% 100%;
+    --accent: 189 90% 40%;
+    --accent-foreground: 0 0% 100%;
+
+    --success: 152 55% 36%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 85% 42%;
+    --warning-foreground: 0 0% 100%;
+    --error: 0 72% 45%;
+    --error-foreground: 0 0% 100%;
+    --info: 205 85% 45%;
+    --info-foreground: 0 0% 100%;
   }
 
-  * {
-    @apply border-border;
+  * { @apply border-border; }
+  body { @apply bg-background text-foreground antialiased; }
+
+  /* Visible, on-brand focus ring everywhere — never rely on the browser default alone. */
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
   }
 
-  body {
-    @apply bg-background text-foreground antialiased;
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
   }
 }
 
 @layer utilities {
   .text-gradient-gadgexo {
     @apply bg-gadgexo-gradient bg-clip-text text-transparent;
+  }
+  /* Skeleton shimmer, respects reduced-motion via the rule above. */
+  .skeleton-shimmer {
+    background: linear-gradient(
+      90deg,
+      hsl(var(--muted)) 25%,
+      hsl(var(--surface-elevated)) 37%,
+      hsl(var(--muted)) 63%
+    );
+    background-size: 400% 100%;
   }
 }
