@@ -18,7 +18,7 @@ export function MobileBottomNav() {
     >
       <ul className="flex items-center justify-around">
         {MOBILE_BOTTOM_NAV.map((item) => {
-          const Icon = ICONS[item.icon];
+          const Icon = ICONS[item.icon] ?? Home;
           const active = pathname === item.href;
           return (
             <li key={item.href} className="flex-1">
