@@ -28,4 +28,13 @@ export interface ProductWithDetails extends Product {
   category: Category;
   variants: ProductVariant[];
   images: ProductImage[];
+  specificationGroups: SpecificationGroupWithValues[];
+}
+
+export interface SpecificationGroupWithValues {
+  group: SpecificationGroup;
+  specs: {
+    specification: Specification;
+    value: ProductSpecification;
+  }[];
 }
