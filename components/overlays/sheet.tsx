@@ -48,5 +48,22 @@ export const SheetContent = React.forwardRef<React.ElementRef<typeof DialogPrimi
 );
 SheetContent.displayName = "SheetContent";
 
+export const SheetHeader = React.forwardRef<
+  HTMLDivElement,
+  React.HTMLAttributes<HTMLDivElement>
+>(({ className, ...props }, ref) => (
+  <div
+    ref={ref}
+    className={cn(
+      "flex flex-col space-y-2 text-center sm:text-left",
+      className
+    )}
+    {...props}
+  />
+));
+
+SheetHeader.displayName = "SheetHeader";
+
 export const SheetTitle = DialogPrimitive.Title;
+
 export const SheetDescription = DialogPrimitive.Description;
