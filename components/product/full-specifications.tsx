@@ -1,66 +1,88 @@
 "use client";
 
-import {
-  Accordion,
-  AccordionItem,
-  AccordionTrigger,
-  AccordionContent,
-} from "@/components/ui/accordion";
+import * as React from "react";
+import Image from "next/image";
 
-import { formatSpecValue } from "@/lib/catalogue/spec-format";
-import type { DetailSpecGroup } from "@/lib/db/product-detail";
+import { ImageOff } from "lucide-react";
 
-export function FullSpecifications({
-  specGroups,
+import { cn } from "@/lib/utils/cn";
+
+export function ProductGallery({
+  images,
+  productName,
 }: {
-  specGroups: DetailSpecGroup[];
+  images: {
+    image_url: string;
+    alt_text: string | null;
+    is_primary: boolean;
+  }[];
+  productName: string;
 }) {
-  if (specGroups.length === 0) return null;
+  const sorted = [...images].sort(
+    (a, b) => Number(b.is_primary) - Number(a.is_primary),
+  );
 
-  const firstGroup = specGroups[0];
+  const [activeIndex, setActiveIndex] = React.useState(0);
+
+  if (sorted.length === 0) {
+    return (
+      <div className="flex aspect-square w-full items-center justify-center rounded-lg border border-border bg-surface-elevated text-muted-foreground">
+        <div className="flex flex-col items-center gap-2">
+          <ImageOff className="h-10 w-10" aria-hidden="true" />
+          <span className="text-caption">Image unavailable</span>
+        </div>
+      </div>
+    );
+  }
+
+  const active = sorted[activeIndex] ?? sorted[0];
 
   return (
-    <div>
-      <h2 className="mb-3 text-h3">Full Specifications</h2>
+    <div className="flex flex-col gap-3">
+      <div className="relative aspect-square w-full overflow-hidden rounded-lg border border-border bg-surface-elevated">
+        <Image
+          key={active.image_url}
+          src={active.image_url}
+          alt={active.alt_text || productName}
+          fill
+          priority
+          sizes="(max-width: 1024px) 100vw, 50vw"
+          className="object-cover"
+        />
+      </div>
 
-      <Accordion
-        type="multiple"
-        defaultValue={firstGroup ? [firstGroup.id] : []}
-      >
-        {specGroups.map((group) => (
-          <AccordionItem key={group.id} value={group.id}>
-            <AccordionTrigger>{group.name}</AccordionTrigger>
-
-            <AccordionContent>
-              <dl className="flex flex-col divide-y divide-border">
-                {group.specs.map((spec) => (
-                  <div
-                    key={spec.id}
-                    className="flex items-center justify-between gap-4 py-2"
-                  >
-                    <dt className="text-small text-muted-foreground">
-                      {spec.name}
-                    </dt>
-
-                    <dd className="flex items-center gap-2 text-small font-medium">
-                      {formatSpecValue(spec.value, spec.unit)}
-
-                      {spec.verification_status === "conflicting" && (
-                        <span
-                          className="text-caption font-normal text-warning"
-                          title="Sources disagree on this value"
-                        >
-                          ⚠
-                        </span>
-                      )}
-                    </dd>
-                  </div>
-                ))}
-              </dl>
-            </AccordionContent>
-          </AccordionItem>
-        ))}
-      </Accordion>
+      {sorted.length > 1 && (
+        <div
+          className="flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          role="tablist"
+          aria-label="Product images"
+        >
+          {sorted.map((img, i) => (
+            <button
+              key={img.image_url}
+              type="button"
+              role="tab"
+              aria-selected={i === activeIndex}
+              aria-label={`View image ${i + 1} of ${sorted.length}`}
+              onClick={() => setActiveIndex(i)}
+              className={cn(
+                "relative h-16 w-16 shrink-0 overflow-hidden rounded-md border-2",
+                i === activeIndex
+                  ? "border-primary"
+                  : "border-border opacity-70",
+              )}
+            >
+              <Image
+                src={img.image_url}
+                alt=""
+                fill
+                sizes="64px"
+                className="object-cover"
+              />
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
