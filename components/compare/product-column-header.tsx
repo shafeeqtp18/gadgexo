@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { ImageOff, X } from "lucide-react";
 import { VerificationBadge, AvailabilityBadge } from "@/components/data-display/status-indicator";
+import { PriceFreshness } from "@/components/pricing/price-freshness";
 import { formatINR } from "@/lib/catalogue/format";
 import type { ProductDetail } from "@/lib/db/product-detail";
 
@@ -15,8 +16,8 @@ export function ComparisonColumnHeader({
   const primaryImage = product.images.find((i) => i.is_primary) ?? product.images[0];
   const variant = product.variants.filter((v) => v.availability === "in_stock")[0] ?? product.variants[0];
   const variantLabel = variant ? [variant.ram, variant.storage].filter(Boolean).join(" / ") : null;
-  const prices = variant?.prices.filter((p) => p.availability === "in_stock") ?? [];
-  const lowestPrice = prices.length > 0 ? Math.min(...prices.map((p) => p.price)) : null;
+  const inStockPrices = variant?.prices.filter((p) => p.availability === "in_stock") ?? [];
+  const best = [...inStockPrices].sort((a, b) => a.price - b.price)[0];
 
   return (
     <div className="flex w-44 shrink-0 flex-col gap-2 sm:w-56">
@@ -50,7 +51,15 @@ export function ComparisonColumnHeader({
         {variantLabel && <p className="text-caption text-muted-foreground">{variantLabel}</p>}
       </div>
 
-      <p className="text-center text-small font-semibold">{lowestPrice !== null ? formatINR(lowestPrice) : "Price unavailable"}</p>
+      <div className="text-center">
+        <p className="text-small font-semibold">{best ? formatINR(best.price) : "Price unavailable"}</p>
+        {best && (
+          <>
+            <p className="text-caption text-muted-foreground">from {best.retailer.name}</p>
+            <PriceFreshness observedAt={best.last_checked_at} verificationStatus={best.verification_status} />
+          </>
+        )}
+      </div>
 
       <div className="flex flex-col items-center gap-1">
         <VerificationBadge status={product.verification_status as any} />

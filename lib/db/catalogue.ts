@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { computePriceDrop, type PriceDrop } from "@/lib/catalogue/price-drop";
 import {
   CATALOGUE_PAGE_SIZE,
   PRICE_BUCKETS,
@@ -8,10 +9,6 @@ import {
   type CatalogueFilters,
 } from "@/lib/catalogue/types";
 
-// Small, curated set of specs worth showing on a catalogue card. Only
-// specs the seed data actually populates for at least one product should
-// be relied on here — anything else silently renders nothing, which is
-// correct (see NO_FAKE_DATA in the Phase 5 brief) rather than a gap.
 const CARD_SPEC_SLUGS = ["display-size", "chipset", "battery-capacity"];
 
 const CARD_SELECT = `
@@ -37,7 +34,6 @@ function mapSpecHighlights(specs: any[]): { label: string; value: string }[] {
     }));
 }
 
-/** Distinct brand/RAM/storage values that actually appear among published products — never a hard-coded list. */
 export async function getCatalogueFilterOptions(): Promise<CatalogueFilterOptions> {
   const supabase = createClient();
 
@@ -91,7 +87,7 @@ async function resolveProductIdsByVariant(
   ram: string[],
   storage: string[],
 ): Promise<string[] | null> {
-  if (ram.length === 0 && storage.length === 0) return null; // no variant-level filter active
+  if (ram.length === 0 && storage.length === 0) return null;
   let query = supabase.from("product_variants").select("product_id");
   if (ram.length > 0) query = query.in("ram", ram);
   if (storage.length > 0) query = query.in("storage", storage);
@@ -100,12 +96,18 @@ async function resolveProductIdsByVariant(
   return [...new Set((data ?? []).map((v) => v.product_id))];
 }
 
-/** In-stock minimum price per product, keyed by product id. Products with no in-stock price are simply absent — never a fabricated 0 or fallback. */
-async function getMinPricesByProductId(
+interface PriceInfo {
+  price: number;
+  verification_status: string;
+  drop: PriceDrop | null;
+}
+
+/** Min in-stock price per product, plus a genuine price-drop (Phase 8) computed from that variant's price_history. */
+async function getPriceInfoByProductId(
   supabase: ReturnType<typeof createClient>,
   productIds: string[],
-): Promise<Map<string, { price: number; verification_status: string }>> {
-  const result = new Map<string, { price: number; verification_status: string }>();
+): Promise<Map<string, PriceInfo>> {
+  const result = new Map<string, PriceInfo>();
   if (productIds.length === 0) return result;
 
   const { data: variants, error: variantsError } = await supabase
@@ -117,21 +119,40 @@ async function getMinPricesByProductId(
   const variantIds = [...variantToProduct.keys()];
   if (variantIds.length === 0) return result;
 
-  const { data: prices, error: pricesError } = await supabase
-    .from("prices")
-    .select("variant_id, price, verification_status")
-    .in("variant_id", variantIds)
-    .eq("availability", "in_stock");
-  if (pricesError) throw pricesError;
+  const [pricesRes, historyRes] = await Promise.all([
+    supabase.from("prices").select("variant_id, price, verification_status").in("variant_id", variantIds).eq("availability", "in_stock"),
+    supabase.from("price_history").select("variant_id, price, recorded_at").in("variant_id", variantIds),
+  ]);
+  if (pricesRes.error) throw pricesRes.error;
+  if (historyRes.error) throw historyRes.error;
 
-  for (const row of prices ?? []) {
+  const historyByVariant = new Map<string, { price: number; recorded_at: string }[]>();
+  for (const h of historyRes.data ?? []) {
+    const list = historyByVariant.get(h.variant_id) ?? [];
+    list.push({ price: h.price, recorded_at: h.recorded_at });
+    historyByVariant.set(h.variant_id, list);
+  }
+
+  // Track which variant currently holds each product's best price, so the
+  // drop we compute matches the price actually shown on the card.
+  const bestVariantForProduct = new Map<string, string>();
+
+  for (const row of pricesRes.data ?? []) {
     const productId = variantToProduct.get(row.variant_id);
     if (!productId) continue;
     const existing = result.get(productId);
     if (!existing || row.price < existing.price) {
-      result.set(productId, { price: row.price, verification_status: row.verification_status });
+      result.set(productId, { price: row.price, verification_status: row.verification_status, drop: null });
+      bestVariantForProduct.set(productId, row.variant_id);
     }
   }
+
+  for (const [productId, variantId] of bestVariantForProduct) {
+    const info = result.get(productId);
+    if (!info) continue;
+    info.drop = computePriceDrop(info.price, historyByVariant.get(variantId) ?? []);
+  }
+
   return result;
 }
 
@@ -160,8 +181,6 @@ export async function listCatalogueProducts(
     query = query.in("id", variantProductIds.length > 0 ? variantProductIds : ["00000000-0000-0000-0000-000000000000"]);
   }
 
-  // Non-price sort applied at the DB level regardless of path — cheap and
-  // gives a sensible base order even when we resort in memory afterward.
   if (filters.sort === "name-asc") query = query.order("name", { ascending: true });
   else if (filters.sort === "name-desc") query = query.order("name", { ascending: false });
   else if (filters.sort === "newest") query = query.order("release_date", { ascending: false, nullsFirst: false });
@@ -173,33 +192,31 @@ export async function listCatalogueProducts(
     if (error) throw error;
 
     const productIds = (data ?? []).map((p) => p.id);
-    const prices = await getMinPricesByProductId(supabase, productIds);
+    const priceInfo = await getPriceInfoByProductId(supabase, productIds);
 
     const products: CatalogueCardProduct[] = (data ?? []).map((p: any) => ({
       ...p,
       specHighlights: mapSpecHighlights(p.specs),
-      startingPrice: prices.get(p.id)?.price ?? null,
-      priceVerificationStatus: prices.get(p.id)?.verification_status ?? null,
+      startingPrice: priceInfo.get(p.id)?.price ?? null,
+      priceVerificationStatus: priceInfo.get(p.id)?.verification_status ?? null,
+      priceDrop: priceInfo.get(p.id)?.drop ?? null,
     }));
 
     return { products, total: count ?? 0, priceDataLimited: false };
   }
 
-  // Price bucket or price sort requested — needs every matching product's
-  // price before we can filter/sort/paginate. Capped for scale; see
-  // PRICE_SORT_FETCH_CAP. A larger catalog needs a SQL-level min_price
-  // view instead of this in-memory approach.
   const { data, error } = await query.range(0, PRICE_SORT_FETCH_CAP - 1);
   if (error) throw error;
 
   const allIds = (data ?? []).map((p) => p.id);
-  const prices = await getMinPricesByProductId(supabase, allIds);
+  const priceInfo = await getPriceInfoByProductId(supabase, allIds);
 
   let withPrices: CatalogueCardProduct[] = (data ?? []).map((p: any) => ({
     ...p,
     specHighlights: mapSpecHighlights(p.specs),
-    startingPrice: prices.get(p.id)?.price ?? null,
-    priceVerificationStatus: prices.get(p.id)?.verification_status ?? null,
+    startingPrice: priceInfo.get(p.id)?.price ?? null,
+    priceVerificationStatus: priceInfo.get(p.id)?.verification_status ?? null,
+    priceDrop: priceInfo.get(p.id)?.drop ?? null,
   }));
 
   if (filters.priceBucket) {

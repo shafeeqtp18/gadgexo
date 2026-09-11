@@ -1,11 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { ExternalLink } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { AvailabilityBadge } from "@/components/data-display/status-indicator";
-import { formatINR } from "@/lib/catalogue/format";
-import { formatRelativeTime } from "@/lib/catalogue/spec-format";
+import { RetailerPriceList } from "@/components/pricing/retailer-price-list";
 import { cn } from "@/lib/utils/cn";
 import type { DetailVariant } from "@/lib/db/product-detail";
 
@@ -14,7 +11,6 @@ export function VariantPriceSection({ variants }: { variants: DetailVariant[] })
   const selected = variants.find((v) => v.id === selectedId) ?? variants[0];
   if (!selected) return null;
 
-  const inStockPrices = selected.prices.filter((p) => p.availability === "in_stock").sort((a, b) => a.price - b.price);
   const hasMultipleVariants = variants.length > 1;
 
   return (
@@ -46,40 +42,7 @@ export function VariantPriceSection({ variants }: { variants: DetailVariant[] })
         </div>
       )}
 
-      <div className="rounded-lg border border-border p-4">
-        {inStockPrices.length === 0 ? (
-          <p className="text-body text-muted-foreground">Price unavailable</p>
-        ) : (
-          <div className="flex flex-col gap-3">
-            {inStockPrices.map((p) => (
-              <div key={p.id} className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-small font-medium">{p.retailer.name}</p>
-                  <p className="text-caption text-muted-foreground">
-                    Last checked {formatRelativeTime(p.last_checked_at)}
-                    {p.verification_status === "unverified" && " · demo price, not verified"}
-                  </p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="text-right">
-                    <p className="text-h3 font-semibold">{formatINR(p.price)}</p>
-                    {p.mrp && p.discount_percent && (
-                      <p className="text-caption text-muted-foreground">
-                        <span className="line-through">{formatINR(p.mrp)}</span> ({p.discount_percent}% off)
-                      </p>
-                    )}
-                  </div>
-                  <Button asChild size="sm" variant="outline">
-                    <a href={p.product_url} target="_blank" rel="noopener noreferrer nofollow">
-                      Visit <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
-                    </a>
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+      <RetailerPriceList prices={selected.prices} priceHistory={selected.priceHistory} />
 
       <div className="flex items-center gap-2">
         <AvailabilityBadge status={selected.availability as any} />

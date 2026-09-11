@@ -4,7 +4,9 @@ import { ImageOff } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { VerificationBadge, AvailabilityBadge } from "@/components/data-display/status-indicator";
 import { CompareCheckbox } from "@/components/catalogue/compare";
+import { PriceDropBadge } from "@/components/pricing/price-drop-badge";
 import { formatINR } from "@/lib/catalogue/format";
+import type { PriceDrop } from "@/lib/catalogue/price-drop";
 
 export interface ProductCardData {
   id: string;
@@ -13,11 +15,11 @@ export interface ProductCardData {
   verification_status: string;
   brand: { name: string } | null;
   images: Array<{ image_url: string; is_primary: boolean }>;
-  // Optional — only used by the catalogue, homepage usage omits these.
   variants?: Array<{ ram: string | null; storage: string | null; availability: string }>;
   specHighlights?: Array<{ label: string; value: string }>;
   startingPrice?: number | null;
   priceVerificationStatus?: string | null;
+  priceDrop?: PriceDrop | null;
   showCompare?: boolean;
 }
 
@@ -45,6 +47,11 @@ export function ProductCard({ product }: { product: ProductCardData }) {
           {baseVariant?.availability && baseVariant.availability !== "in_stock" && (
             <div className="absolute left-2 top-2">
               <AvailabilityBadge status={baseVariant.availability as any} />
+            </div>
+          )}
+          {product.priceDrop && (
+            <div className="absolute right-2 top-2">
+              <PriceDropBadge drop={product.priceDrop} compact />
             </div>
           )}
         </div>
