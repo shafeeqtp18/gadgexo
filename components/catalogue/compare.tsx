@@ -68,7 +68,8 @@ export function CompareProvider({ children }: { children: React.ReactNode }) {
   return <CompareContext.Provider value={value}>{children}</CompareContext.Provider>;
 }
 
-function useCompare() {
+/** Exported (was internal-only in Phase 5) — the staging comparison page (Phase 7) reads/modifies the same local selection through this. */
+export function useCompare() {
   const ctx = React.useContext(CompareContext);
   if (!ctx) throw new Error("useCompare must be used within CompareProvider");
   return ctx;

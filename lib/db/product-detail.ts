@@ -70,39 +70,33 @@ export interface ProductDetail {
   images: { image_url: string; alt_text: string | null; is_primary: boolean }[];
   variants: DetailVariant[];
   specGroups: DetailSpecGroup[];
-  sources: DetailSource[]; // distinct sources referenced by this product's specs/prices
+  sources: DetailSource[];
 }
 
-export async function getProductDetail(slug: string): Promise<ProductDetail | null> {
-  const supabase = createClient();
+const PRODUCT_SELECT = `
+  id, name, slug, model_identifier, short_description, description, status,
+  verification_status, release_date, india_release_date, updated_at,
+  brand:brands(id, name, slug),
+  category:categories(id, name, slug),
+  images:product_images(image_url, alt_text, is_primary)
+`;
 
-  const { data: product, error: productError } = await supabase
-    .from("products")
-    .select(`
-      id, name, slug, model_identifier, short_description, description, status,
-      verification_status, release_date, india_release_date, updated_at,
-      brand:brands(id, name, slug),
-      category:categories(id, name, slug),
-      images:product_images(image_url, alt_text, is_primary)
-    `)
-    .eq("slug", slug)
-    .eq("status", "published")
-    .maybeSingle();
-  if (productError) throw productError;
-  if (!product) return null;
+async function fetchProductDetailCore(productRow: any): Promise<ProductDetail | null> {
+  const supabase = createClient();
+  if (!productRow) return null;
 
   const [variantsRes, specsRes] = await Promise.all([
     supabase
       .from("product_variants")
       .select("id, ram, storage, storage_type, color, color_hex, region, model_number, sku, availability")
-      .eq("product_id", product.id),
+      .eq("product_id", productRow.id),
     supabase
       .from("product_specifications")
       .select(`
         value, verification_status, source_id,
         specification:specifications(id, name, slug, unit, group:specification_groups(id, name, sort_order))
       `)
-      .eq("product_id", product.id),
+      .eq("product_id", productRow.id),
   ]);
   if (variantsRes.error) throw variantsRes.error;
   if (specsRes.error) throw specsRes.error;
@@ -139,7 +133,6 @@ export async function getProductDetail(slug: string): Promise<ProductDetail | nu
     for (const h of historyData) if (h.source_id) sourceIds.add(h.source_id);
   }
 
-  // Resolve every source referenced by specs + prices + history in one go.
   const sourceMap = await resolveSources(supabase, [...sourceIds]);
 
   const pricesByVariant = new Map<string, DetailPrice[]>();
@@ -192,14 +185,29 @@ export async function getProductDetail(slug: string): Promise<ProductDetail | nu
   const specGroups = [...groupMap.values()].sort((a, b) => a.sort_order - b.sort_order);
 
   return {
-    ...product,
-    brand: product.brand as any,
-    category: product.category as any,
-    images: product.images ?? [],
+    ...productRow,
+    brand: productRow.brand as any,
+    category: productRow.category as any,
+    images: productRow.images ?? [],
     variants,
     specGroups,
     sources: [...sourceMap.values()],
   };
+}
+
+export async function getProductDetail(slug: string): Promise<ProductDetail | null> {
+  const supabase = createClient();
+  const { data, error } = await supabase.from("products").select(PRODUCT_SELECT).eq("slug", slug).eq("status", "published").maybeSingle();
+  if (error) throw error;
+  return fetchProductDetailCore(data);
+}
+
+/** Same shape as getProductDetail, keyed by id — used by the comparison engine, which only has comparison_items.product_id to work with. */
+export async function getProductDetailById(id: string): Promise<ProductDetail | null> {
+  const supabase = createClient();
+  const { data, error } = await supabase.from("products").select(PRODUCT_SELECT).eq("id", id).eq("status", "published").maybeSingle();
+  if (error) throw error;
+  return fetchProductDetailCore(data);
 }
 
 async function resolveSources(supabase: ReturnType<typeof createClient>, ids: string[]): Promise<Map<string, DetailSource>> {
@@ -211,7 +219,7 @@ async function resolveSources(supabase: ReturnType<typeof createClient>, ids: st
   return map;
 }
 
-/** Same brand first, then same category, excluding the product itself — never a fabricated "similarity score". */
+/** Same brand first, then same category, excluding the product itself. */
 export async function getRelatedProducts(productId: string, brandId: string | null, categoryId: string | null, limit = 4) {
   const supabase = createClient();
   const select = "id, name, slug, verification_status, brand:brands(name), images:product_images(image_url, is_primary)";
@@ -220,24 +228,12 @@ export async function getRelatedProducts(productId: string, brandId: string | nu
   const seen = new Set([productId]);
 
   if (brandId) {
-    const { data } = await supabase
-      .from("products")
-      .select(select)
-      .eq("status", "published")
-      .eq("brand_id", brandId)
-      .neq("id", productId)
-      .limit(limit);
+    const { data } = await supabase.from("products").select(select).eq("status", "published").eq("brand_id", brandId).neq("id", productId).limit(limit);
     for (const p of data ?? []) if (!seen.has(p.id)) { results.push(p); seen.add(p.id); }
   }
 
   if (results.length < limit && categoryId) {
-    const { data } = await supabase
-      .from("products")
-      .select(select)
-      .eq("status", "published")
-      .eq("category_id", categoryId)
-      .neq("id", productId)
-      .limit(limit - results.length + seen.size);
+    const { data } = await supabase.from("products").select(select).eq("status", "published").eq("category_id", categoryId).neq("id", productId).limit(limit - results.length + seen.size);
     for (const p of data ?? []) {
       if (results.length >= limit) break;
       if (!seen.has(p.id)) { results.push(p); seen.add(p.id); }

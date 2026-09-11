@@ -1,20 +1,27 @@
 import type { Metadata } from "next";
-import { GitCompare } from "lucide-react";
 import { Container, Section } from "@/components/layout/primitives";
-import { EmptyState } from "@/components/feedback/empty-state";
+import { Breadcrumb } from "@/components/ui/breadcrumb";
+import { CompareProvider } from "@/components/catalogue/compare";
+import { StagingComparison } from "@/components/compare/staging-comparison";
 
-export const metadata: Metadata = { title: "Compare" };
+export const metadata: Metadata = {
+  title: "Compare Smartphones",
+  description: "Select smartphones to compare specifications, prices and availability side by side.",
+};
 
 export default function ComparePage() {
   return (
-    <Section className="py-16">
-      <Container>
-        <EmptyState
-          icon={GitCompare}
-          title="Comparison tool coming soon"
-          description="Side-by-side spec and price comparison is under active development."
-        />
-      </Container>
-    </Section>
+    <CompareProvider>
+      <Section className="py-10">
+        <Container>
+          <Breadcrumb items={[{ label: "Home", href: "/" }, { label: "Compare" }]} className="mb-6" />
+          <h1 className="mb-2 text-h1">Compare Smartphones</h1>
+          <p className="mb-8 text-small text-muted-foreground">
+            Select two to four smartphones to compare specifications, prices and availability side by side.
+          </p>
+          <StagingComparison />
+        </Container>
+      </Section>
+    </CompareProvider>
   );
 }
