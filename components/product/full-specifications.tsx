@@ -17,13 +17,15 @@ export function FullSpecifications({
 }) {
   if (specGroups.length === 0) return null;
 
+  const firstGroup = specGroups[0];
+
   return (
     <div>
       <h2 className="mb-3 text-h3">Full Specifications</h2>
 
       <Accordion
         type="multiple"
-        defaultValue={specGroups.length > 0 ? [specGroups[0].id] : []}
+        defaultValue={firstGroup ? [firstGroup.id] : []}
       >
         {specGroups.map((group) => (
           <AccordionItem key={group.id} value={group.id}>
