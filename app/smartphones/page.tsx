@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { getCatalogueFilterOptions, listCatalogueProducts } from "@/lib/db/catalogue";
+import { getCurrentUser } from "@/lib/db/account";
+import { getWishlistProductIds } from "@/lib/db/wishlist";
 import { parseCatalogueSearchParams } from "@/lib/catalogue/url";
 import { CatalogueHeader } from "@/components/catalogue/catalogue-header";
 import { CatalogueSearch } from "@/components/catalogue/catalogue-search";
@@ -18,9 +20,6 @@ import { SearchX } from "lucide-react";
 export const metadata: Metadata = {
   title: "Smartphones — Compare specs, prices & more",
   description: "Browse smartphones by brand, RAM, storage and price. Compare specifications and see verification status for every listing.",
-  // Filter/sort/page combinations aren't indexed individually — avoids the
-  // low-quality-URL problem the Phase 5 brief calls out. The canonical
-  // catalogue URL is the one worth indexing.
   alternates: { canonical: "/smartphones" },
 };
 
@@ -55,6 +54,9 @@ export default async function SmartphonesPage({
   }
 
   const { products, total, priceDataLimited } = result;
+
+  const user = await getCurrentUser();
+  const wishlistIds = await getWishlistProductIds(user?.id ?? null);
 
   return (
     <CompareProvider>
@@ -91,7 +93,16 @@ export default async function SmartphonesPage({
                   <>
                     <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-4">
                       {products.map((product) => (
-                        <ProductCard key={product.id} product={{ ...product, showCompare: true }} />
+                        <ProductCard
+                          key={product.id}
+                          product={{
+                            ...product,
+                            showCompare: true,
+                            showWishlist: true,
+                            isWishlisted: wishlistIds.has(product.id),
+                            isAuthenticated: Boolean(user),
+                          }}
+                        />
                       ))}
                     </div>
                     <CataloguePagination filters={filters} total={total} />

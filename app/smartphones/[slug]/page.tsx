@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getProductDetail, getRelatedProducts } from "@/lib/db/product-detail";
+import { getCurrentUser } from "@/lib/db/account";
+import { getWishlistProductIds } from "@/lib/db/wishlist";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { Container, Section } from "@/components/layout/primitives";
 import { VerificationBadge } from "@/components/data-display/status-indicator";
@@ -12,7 +14,7 @@ import { VerificationNotice } from "@/components/product/verification-notice";
 import { SourcesSection } from "@/components/product/sources-section";
 import { PriceHistorySection } from "@/components/product/price-history";
 import { RelatedProducts } from "@/components/product/related-products";
-import { WishlistButton } from "@/components/product/wishlist-button";
+import { WishlistButton } from "@/components/account/wishlist-button";
 import { CompareProvider, CompareBar, CompareCheckbox } from "@/components/catalogue/compare";
 
 interface Props {
@@ -41,6 +43,9 @@ export default async function ProductDetailPage({ params }: Props) {
 
   const related = await getRelatedProducts(product.id, product.brand?.id ?? null, product.category?.id ?? null, 4);
   const baseVariant = product.variants[0];
+
+  const user = await getCurrentUser();
+  const wishlistIds = await getWishlistProductIds(user?.id ?? null);
 
   const jsonLd = {
     "@context": "https://schema.org",
@@ -92,7 +97,11 @@ export default async function ProductDetailPage({ params }: Props) {
 
               <div className="flex items-center gap-2">
                 <CompareCheckbox product={{ id: product.id, name: product.name, slug: product.slug }} />
-                <WishlistButton />
+                <WishlistButton
+                  productId={product.id}
+                  initialSaved={wishlistIds.has(product.id)}
+                  isAuthenticated={Boolean(user)}
+                />
               </div>
             </div>
           </div>

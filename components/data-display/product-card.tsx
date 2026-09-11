@@ -5,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { VerificationBadge, AvailabilityBadge } from "@/components/data-display/status-indicator";
 import { CompareCheckbox } from "@/components/catalogue/compare";
 import { PriceDropBadge } from "@/components/pricing/price-drop-badge";
+import { WishlistButton } from "@/components/account/wishlist-button";
 import { formatINR } from "@/lib/catalogue/format";
 import type { PriceDrop } from "@/lib/catalogue/price-drop";
 
@@ -21,6 +22,9 @@ export interface ProductCardData {
   priceVerificationStatus?: string | null;
   priceDrop?: PriceDrop | null;
   showCompare?: boolean;
+  isWishlisted?: boolean;
+  showWishlist?: boolean;
+  isAuthenticated?: boolean;
 }
 
 export function ProductCard({ product }: { product: ProductCardData }) {
@@ -93,9 +97,18 @@ export function ProductCard({ product }: { product: ProductCardData }) {
           )}
           <div className="flex items-center justify-between gap-2">
             <VerificationBadge status={product.verification_status as any} />
-            {product.showCompare && (
-              <CompareCheckbox product={{ id: product.id, name: product.name, slug: product.slug }} />
-            )}
+            <div className="flex items-center gap-1.5">
+              {product.showWishlist && (
+                <WishlistButton
+                  productId={product.id}
+                  initialSaved={Boolean(product.isWishlisted)}
+                  isAuthenticated={Boolean(product.isAuthenticated)}
+                />
+              )}
+              {product.showCompare && (
+                <CompareCheckbox product={{ id: product.id, name: product.name, slug: product.slug }} />
+              )}
+            </div>
           </div>
         </div>
       </CardContent>

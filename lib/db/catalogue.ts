@@ -102,8 +102,8 @@ interface PriceInfo {
   drop: PriceDrop | null;
 }
 
-/** Min in-stock price per product, plus a genuine price-drop (Phase 8) computed from that variant's price_history. */
-async function getPriceInfoByProductId(
+/** Min in-stock price per product, plus a genuine price-drop (Phase 8) computed from that variant's price_history. Exported (Phase 9) so the wishlist page can reuse it instead of duplicating this query. */
+export async function getPriceInfoByProductId(
   supabase: ReturnType<typeof createClient>,
   productIds: string[],
 ): Promise<Map<string, PriceInfo>> {
