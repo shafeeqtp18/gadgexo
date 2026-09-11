@@ -46,7 +46,7 @@ export default async function SavedComparisonPage({ params }: Props) {
             description="Every product in this comparison has been removed or is no longer published."
           />
         ) : products.length === 1 ? (
-          <OneProductState token={token} product={products[0]} />
+          <OneProductState token={token} product={products[0]!} />
         ) : (
           <TokenComparisonClient
             token={token}
