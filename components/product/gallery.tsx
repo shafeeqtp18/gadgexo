@@ -32,43 +32,26 @@ export function ProductGallery({
     return (
       <div className="flex aspect-square w-full items-center justify-center rounded-lg border border-border bg-surface-elevated text-muted-foreground">
         <div className="flex flex-col items-center gap-2">
-          <ImageOff
-            className="h-10 w-10"
-            aria-hidden="true"
-          />
-          <span className="text-caption">
-            Image unavailable
-          </span>
+          <ImageOff className="h-10 w-10" aria-hidden="true" />
+          <span className="text-caption">Image unavailable</span>
         </div>
       </div>
     );
   }
 
-  const active = sorted[activeIndex];
+  const currentImage = sorted[activeIndex];
 
-  if (!active) {
-    return (
-      <div className="flex aspect-square w-full items-center justify-center rounded-lg border border-border bg-surface-elevated text-muted-foreground">
-        <div className="flex flex-col items-center gap-2">
-          <ImageOff
-            className="h-10 w-10"
-            aria-hidden="true"
-          />
-          <span className="text-caption">
-            Image unavailable
-          </span>
-        </div>
-      </div>
-    );
+  if (!currentImage) {
+    return null;
   }
 
   return (
     <div className="flex flex-col gap-3">
       <div className="relative aspect-square w-full overflow-hidden rounded-lg border border-border bg-surface-elevated">
         <Image
-          key={active.image_url}
-          src={active.image_url}
-          alt={active.alt_text || productName}
+          key={currentImage.image_url}
+          src={currentImage.image_url}
+          alt={currentImage.alt_text || productName}
           fill
           priority
           sizes="(max-width: 1024px) 100vw, 50vw"
