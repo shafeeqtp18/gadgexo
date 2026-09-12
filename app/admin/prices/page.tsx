@@ -65,7 +65,7 @@ export default async function AdminPricesPage({ searchParams }: { searchParams: 
         </table>
       </div>
       {(prices ?? []).length === 0 && <p className="text-small text-muted-foreground">No price records match this filter.</p>}
-      <p className="text-caption text-muted-foreground">Read-only monitoring view — editing individual price records is deferred to Phase 11's data pipeline.</p>
+      <p className="text-caption text-muted-foreground">Read-only monitoring view — editing individual price records is deferred to Phase 11&apos;s data pipeline.</p>
     </div>
   );
 }
