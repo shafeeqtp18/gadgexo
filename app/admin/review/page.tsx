@@ -22,7 +22,7 @@ export default async function AdminReviewPage() {
 
       {(items ?? []).length === 0 ? (
         <p className="text-small text-muted-foreground">
-          Nothing needs review right now. This queue will populate once Phase 11's data agent is connected.
+          Nothing needs review right now. This queue will populate once Phase 11&apos;s data agent is connected.
         </p>
       ) : (
         <ul className="flex flex-col gap-3">
