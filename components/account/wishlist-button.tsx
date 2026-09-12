@@ -15,7 +15,7 @@ export function WishlistButton({
   productId: string;
   initialSaved: boolean;
   isAuthenticated: boolean;
-  size?: "sm" | "default";
+  size?: "sm" | "md";
 }) {
   const [saved, setSaved] = React.useState(initialSaved);
   const [pending, setPending] = React.useState(false);
