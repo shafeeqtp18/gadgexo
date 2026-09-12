@@ -17,6 +17,7 @@ const sheetVariants = cva("fixed z-modal border-border bg-surface shadow-lg", {
       // is how future desktop filter/cart panels would use this.
       bottom: "inset-x-0 bottom-0 rounded-t-lg border-t max-h-[85vh]",
       right: "inset-y-0 right-0 h-full w-full max-w-sm border-l",
+left: "inset-y-0 left-0 h-full w-full max-w-sm border-r",
     },
   },
   defaultVariants: { side: "bottom" },
