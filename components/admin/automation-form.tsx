@@ -80,8 +80,7 @@ export function AutomationForm({ initial }: { initial: Settings }) {
             <DialogTitle>Enable automation?</DialogTitle>
           </DialogHeader>
           <p className="text-small text-muted-foreground">
-            This turns on the control switch Phase 11's data agent will use. No agent exists yet, so this alone changes nothing live —
-            but confirm you intend to flip this switch.
+            This turns on the control switch Phase 11&apos;s data agent will use. No agent exists yet, so this alone changes nothing live —
           </p>
           <div className="flex gap-2 pt-2">
             <Button
