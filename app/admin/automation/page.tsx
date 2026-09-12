@@ -17,8 +17,7 @@ export default async function AdminAutomationPage() {
     <div className="flex flex-col gap-4">
       <h1 className="text-h1">Automation</h1>
       <p className="max-w-xl text-small text-muted-foreground">
-        This is the global control switch for GadGexo's future autonomous data agent (Phase 11). It ships disabled, and nothing in Phases
-        1–10 writes to this table automatically — only you, here.
+        This is the global control switch for GadGexo&apos;s future autonomous data agent (Phase 11). It ships disabled, and nothing in Phases
       </p>
       <AutomationForm
         initial={settings ?? { enabled: false, automation_mode: "approval", confidence_threshold: 0.9, updated_at: null }}
