@@ -69,9 +69,8 @@ function readAuth(): MobileApiAuth | null {
 }
 
 /**
- * Discovery is intentionally not restricted to the current year. The
- * provider returns phone devices and the pipeline can later apply
- * configurable recency/business rules without producing zero candidates. `/devices/by-year/`
+ * Configurable recency cutoff (brief §8: "should be configurable rather
+ * than hard-coded"). Defaults to the current year. `/devices/by-year/`
  * (per its third-party-documented signature) takes one 4-digit year, not
  * a range, so wider coverage means calling this provider's category
  * across multiple years over time — not something this single function
@@ -152,8 +151,8 @@ function mapDeviceToCandidate(raw: unknown, categorySlug: string): RawCandidate 
   const d = raw as Record<string, unknown>;
 
   const name = typeof d.name === "string" ? d.name : undefined;
-  const deviceId = typeof d.id === "number" || typeof d.id === "string" ? String(d.id) : undefined;
-  if (!name || !deviceId) {
+  const imageUrl = typeof d.image_url === "string" ? d.image_url : undefined;
+  if (!name || !imageUrl) {
     // No confident real URL to use as sourceUrl (see file header) —
     // without it we can't honestly satisfy "sourceUrl must always be a
     // real, parseable URL", so skip rather than invent one.
@@ -192,7 +191,7 @@ function mapDeviceToCandidate(raw: unknown, categorySlug: string): RawCandidate 
     variants: [],
     // No `price` field populated — MobileAPI is a product-data source
     // here, not a price source (brief §16).
-    sourceUrl: `${API_BASE}/devices/${encodeURIComponent(deviceId)}/`,
+    sourceUrl: imageUrl,
     sourceName: "MobileAPI.dev",
     sourceType: "database",
     observedAt: new Date().toISOString(),
@@ -218,7 +217,7 @@ async function fetchCandidates(categorySlug: string): Promise<RawCandidate[]> {
   for (let page = 1; page <= MAX_LIST_PAGES; page += 1) {
     if (candidates.length >= MAX_CANDIDATES_PER_RUN) break;
 
-    const url = `${API_BASE}/devices/by-year/?year=${year}&page=${page}`;
+    const url = `${API_BASE}/devices/by-type/?type=phone&page=${page}`;
     const response = await fetchWithRetry(url, auth);
     const payload = await safeJson(response);
     if (payload === null) break;
