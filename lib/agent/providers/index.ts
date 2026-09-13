@@ -1,18 +1,17 @@
 import type { SourceProvider } from "../types";
+import { mobileApiProvider } from "./mobileapi";
 
 /**
- * INTENTIONALLY EMPTY.
+ * Registered data source providers for the discovery pipeline.
  *
- * No manufacturer API, retailer feed, or scraping integration has been
- * connected yet — none exists in this environment (no credentials, no
- * approved API access). Registering a fake/mock provider here would
- * mean the agent silently invents smartphone data, which the Phase 11
- * brief explicitly forbids.
+ * mobileApiProvider is registered but returns [] until MOBILEAPI_API_KEY
+ * is set in the environment (see lib/agent/providers/mobileapi.ts).
  *
- * To connect a real source: implement SourceProvider (see ../types.ts),
- * import it below, and push an instance into this array. The rest of
- * the pipeline (dedup, confidence, conflicts, review routing) already
- * works against whatever RawCandidate[] a provider returns — no other
- * code needs to change.
+ * Note on Flipkart: an earlier Flipkart Affiliate provider was drafted but
+ * never finished or uploaded -- the project's data-provider strategy moved
+ * to MobileAPI.dev for product/spec data before that draft was corrected
+ * against Flipkart's real endpoint shape. Per the current plan, Flipkart
+ * (or another affiliate network) belongs later as a monetization/buy-link
+ * layer, separate from product-spec discovery -- not registered here.
  */
-export const REGISTERED_PROVIDERS: SourceProvider[] = [];
+export const REGISTERED_PROVIDERS: SourceProvider[] = [mobileApiProvider];
