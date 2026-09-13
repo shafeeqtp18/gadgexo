@@ -11,11 +11,11 @@ import type { RawCandidate, SourceProvider } from "../types";
  *     DeviceList fields — name, manufacturer_name, device_type, colors,
  *     storage, screen_resolution, weight, thickness, release_date, camera,
  *     battery_capacity, hardware, image_url, image_b64 — confirmed live).
- *   - Category discovery uses the official `/devices/by-type/` endpoint
- *     because it explicitly filters `type=phone` for the smartphones
- *     category. This avoids accidentally mixing tablets/laptops/etc.
- *   - The API docs show the by-type response as `{ devices: [...] }` with
- *     50 devices per page and pagination metadata.
+ *   - The `/devices/by-year/` endpoint used below for category-driven
+ *     discovery is NOT yet live-verified by us — only documented in a
+ *     third-party OpenAPI profile of the public API surface. Response
+ *     parsing below is defensive (handles either a raw array or a
+ *     `{ devices: [...] }` wrapper) specifically because of this.
  *   - The `/devices/{id}/` nested full-spec endpoint (network, display,
  *     platform, memory, main_camera, battery, etc.) is used NOWHERE in
  *     this file yet. It's also only third-party-documented, not live
@@ -69,9 +69,13 @@ function readAuth(): MobileApiAuth | null {
 }
 
 /**
- * Configurable target year. The by-type endpoint is used for reliable
- * category filtering; the target year is then applied to each returned
- * device's release_date when that field contains a 4-digit year.
+ * Discovery is intentionally not restricted to the current year. The
+ * provider returns phone devices and the pipeline can later apply
+ * configurable recency/business rules without producing zero candidates. `/devices/by-year/`
+ * (per its third-party-documented signature) takes one 4-digit year, not
+ * a range, so wider coverage means calling this provider's category
+ * across multiple years over time — not something this single function
+ * call does on its own.
  */
 function getTargetYear(): number {
   const override = process.env.MOBILEAPI_TARGET_YEAR;
@@ -124,23 +128,18 @@ async function safeJson(response: Response): Promise<unknown | null> {
 }
 
 /**
- * Extract the documented `devices` array from a MobileAPI list response.
+ * Extracts the device array from a by-year response, defensively, since
+ * that endpoint's exact top-level shape is unverified (see file header).
+ * Handles both a raw array and a `{ devices: [...] }` wrapper — the two
+ * shapes actually seen across MobileAPI's documented/observed endpoints.
  */
 function extractDeviceArray(payload: unknown): unknown[] {
+  if (Array.isArray(payload)) return payload;
   if (payload && typeof payload === "object") {
     const devices = (payload as Record<string, unknown>).devices;
     if (Array.isArray(devices)) return devices;
   }
   return [];
-}
-
-function matchesTargetYear(raw: unknown, targetYear: number): boolean {
-  if (!raw || typeof raw !== "object") return false;
-  const releaseDate = (raw as Record<string, unknown>).release_date;
-  if (typeof releaseDate !== "string") return false;
-
-  const match = releaseDate.match(/\b(20\d{2})\b/);
-  return match ? Number(match[1]) === targetYear : false;
 }
 
 /**
@@ -154,7 +153,12 @@ function mapDeviceToCandidate(raw: unknown, categorySlug: string): RawCandidate 
 
   const name = typeof d.name === "string" ? d.name : undefined;
   const deviceId = typeof d.id === "number" || typeof d.id === "string" ? String(d.id) : undefined;
-  if (!name || !deviceId) return null;
+  if (!name || !deviceId) {
+    // No confident real URL to use as sourceUrl (see file header) —
+    // without it we can't honestly satisfy "sourceUrl must always be a
+    // real, parseable URL", so skip rather than invent one.
+    return null;
+  }
 
   const manufacturerName =
     typeof d.manufacturer_name === "string" ? d.manufacturer_name : "Unknown";
@@ -188,7 +192,6 @@ function mapDeviceToCandidate(raw: unknown, categorySlug: string): RawCandidate 
     variants: [],
     // No `price` field populated — MobileAPI is a product-data source
     // here, not a price source (brief §16).
-    // Use the device detail API URL as provenance, not an image URL.
     sourceUrl: `${API_BASE}/devices/${encodeURIComponent(deviceId)}/`,
     sourceName: "MobileAPI.dev",
     sourceType: "database",
@@ -198,29 +201,41 @@ function mapDeviceToCandidate(raw: unknown, categorySlug: string): RawCandidate 
 
 async function fetchCandidates(categorySlug: string): Promise<RawCandidate[]> {
   const auth = readAuth();
-  if (!auth) return [];
+  if (!auth) {
+    // Expected, honest state — no credentials configured yet.
+    return [];
+  }
 
   const deviceType = CATEGORY_SLUG_TO_DEVICE_TYPE[categorySlug];
-  if (!deviceType) return [];
+  if (!deviceType) {
+    // GadGexo asked for a category this provider doesn't know how to map
+    // to a MobileAPI device_type yet. Not an error — nothing found.
+    return [];
+  }
 
-  const year = getTargetYear();
   const candidates: RawCandidate[] = [];
 
   for (let page = 1; page <= MAX_LIST_PAGES; page += 1) {
     if (candidates.length >= MAX_CANDIDATES_PER_RUN) break;
 
-    const url =
-      `${API_BASE}/devices/by-type/?type=${encodeURIComponent(deviceType)}&page=${page}`;
+    const url = `${API_BASE}/devices/by-year/?year=${year}&page=${page}`;
     const response = await fetchWithRetry(url, auth);
     const payload = await safeJson(response);
     if (payload === null) break;
 
     const rawDevices = extractDeviceArray(payload);
-    if (rawDevices.length === 0) break;
+    if (rawDevices.length === 0) break; // no more data — legitimate end, not an error
 
     for (const rawDevice of rawDevices) {
       if (candidates.length >= MAX_CANDIDATES_PER_RUN) break;
-      if (!matchesTargetYear(rawDevice, year)) continue;
+
+      if (
+        !rawDevice ||
+        typeof rawDevice !== "object" ||
+        (rawDevice as Record<string, unknown>).device_type !== deviceType
+      ) {
+        continue; // by-year isn't type-filtered server-side; filter client-side
+      }
 
       const mapped = mapDeviceToCandidate(rawDevice, categorySlug);
       if (mapped) candidates.push(mapped);
