@@ -1,57 +1,17 @@
 import "server-only";
 import type { RawCandidate, SourceProvider } from "../types";
 
-/**
- * MobileAPI.dev provider.
- *
- * STATUS AS OF IMPLEMENTATION (Sep 2026):
- *   - Auth method and the `/devices/search/` response shape were LIVE
- *     VERIFIED against the real account dashboard (query param `key=` and
- *     header `Authorization: Token <key>` both confirmed working; flat
- *     DeviceList fields — name, manufacturer_name, device_type, colors,
- *     storage, screen_resolution, weight, thickness, release_date, camera,
- *     battery_capacity, hardware, image_url, image_b64 — confirmed live).
- *   - The `/devices/by-year/` endpoint used below for category-driven
- *     discovery is NOT yet live-verified by us — only documented in a
- *     third-party OpenAPI profile of the public API surface. Response
- *     parsing below is defensive (handles either a raw array or a
- *     `{ devices: [...] }` wrapper) specifically because of this.
- *   - The `/devices/{id}/` nested full-spec endpoint (network, display,
- *     platform, memory, main_camera, battery, etc.) is used NOWHERE in
- *     this file yet. It's also only third-party-documented, not live
- *     tested, AND there's nothing confident to map its fields to until
- *     GadGexo's real `specifications.slug` values are confirmed (see
- *     SPEC_SLUG_MAP below). Wire it up as a deliberate second step once
- *     both of those are true — don't extend this file to call it on a
- *     guess.
- *
- * QUOTA: Free plan is 50 requests/month, 5/minute. This provider is
- * designed so ONE fetchCandidates() call costs AT MOST MAX_LIST_PAGES
- * credits (default 1) — see brief §9/§20 ("do NOT build a system that
- * consumes all 50 requests immediately").
- */
-
 const API_BASE = "https://api.mobileapi.dev";
 
-// Confirmed live: device_type is a real response field with this enum
-// (phone | tablet | laptop | wearable | other). Not a guess.
 const CATEGORY_SLUG_TO_DEVICE_TYPE: Record<string, string> = {
   smartphones: "phone",
 };
 
-// Safety caps — see file header. Raise deliberately, not by accident.
 const MAX_CANDIDATES_PER_RUN = 2;
 const MAX_LIST_PAGES = 1;
 const MAX_RETRIES = 3;
 const BASE_BACKOFF_MS = 1000;
 
-// Deliberately empty. MobileAPI's raw field names do not automatically
-// correspond to GadGexo's actual `specifications.slug` values (brief §13:
-// "Do NOT blindly copy arbitrary provider field names... Only map fields
-// when the meaning is clear... do not guess"). Populate only after
-// confirming real slugs against the live `specifications` table AND a
-// live-verified `/devices/{id}/` response — neither is true yet, so this
-// provider currently returns specs: {} for every candidate.
 const SPEC_SLUG_MAP: Record<string, string> = {};
 
 function sleep(ms: number): Promise<void> {
@@ -68,12 +28,11 @@ function readAuth(): MobileApiAuth | null {
   return { apiKey };
 }
 
-/**
- * Discovery uses the official `/devices/by-type/` endpoint with
- * `type=phone`, so no year filter is applied at this stage.
- */
-
-async function fetchWithRetry(url: string, auth: MobileApiAuth, attempt = 1): Promise<Response> {
+async function fetchWithRetry(
+  url: string,
+  auth: MobileApiAuth,
+  attempt = 1,
+): Promise<Response> {
   const response = await fetch(url, {
     headers: {
       Authorization: `Token ${auth.apiKey}`,
@@ -83,24 +42,33 @@ async function fetchWithRetry(url: string, auth: MobileApiAuth, attempt = 1): Pr
 
   if (response.status === 429 || response.status >= 500) {
     if (attempt >= MAX_RETRIES) {
-      throw new Error(`MobileAPI: ${response.status} after ${MAX_RETRIES} attempts for ${url}`);
+      throw new Error(
+        `MobileAPI: ${response.status} after ${MAX_RETRIES} attempts for ${url}`,
+      );
     }
+
     const retryAfterHeader = response.headers.get("Retry-After");
     const retryAfterMs = retryAfterHeader
       ? Number(retryAfterHeader) * 1000
       : BASE_BACKOFF_MS * 2 ** (attempt - 1);
-    await sleep(Number.isFinite(retryAfterMs) ? retryAfterMs : BASE_BACKOFF_MS);
+
+    await sleep(
+      Number.isFinite(retryAfterMs) ? retryAfterMs : BASE_BACKOFF_MS,
+    );
+
     return fetchWithRetry(url, auth, attempt + 1);
   }
 
   if (response.status === 401 || response.status === 403) {
-    // Key present but rejected — a genuine failure worth surfacing (e.g.
-    // revoked/regenerated key), not a silent empty result.
-    throw new Error(`MobileAPI: authentication rejected (${response.status}).`);
+    throw new Error(
+      `MobileAPI: authentication rejected (${response.status}).`,
+    );
   }
 
   if (!response.ok) {
-    throw new Error(`MobileAPI: unexpected status ${response.status} for ${url}`);
+    throw new Error(
+      `MobileAPI: unexpected status ${response.status} for ${url}`,
+    );
   }
 
   return response;
@@ -114,55 +82,57 @@ async function safeJson(response: Response): Promise<unknown | null> {
   }
 }
 
-/**
- * Extracts the device array from a by-year response, defensively, since
- * that endpoint's exact top-level shape is unverified (see file header).
- * Handles both a raw array and a `{ devices: [...] }` wrapper — the two
- * shapes actually seen across MobileAPI's documented/observed endpoints.
- */
 function extractDeviceArray(payload: unknown): unknown[] {
   if (Array.isArray(payload)) return payload;
+
   if (payload && typeof payload === "object") {
     const devices = (payload as Record<string, unknown>).devices;
     if (Array.isArray(devices)) return devices;
+
+    const results = (payload as Record<string, unknown>).results;
+    if (Array.isArray(results)) return results;
   }
+
   return [];
 }
 
-/**
- * Maps one raw device entry (confirmed live DeviceList shape) into a
- * RawCandidate. Guards every field access; returns null (skip this item)
- * rather than throwing on a malformed/unexpected entry.
- */
-function mapDeviceToCandidate(raw: unknown, categorySlug: string): RawCandidate | null {
+function mapDeviceToCandidate(
+  raw: unknown,
+  categorySlug: string,
+): RawCandidate | null {
   if (!raw || typeof raw !== "object") return null;
+
   const d = raw as Record<string, unknown>;
 
-  const name = typeof d.name === "string" ? d.name : undefined;
-  const deviceId =
-    typeof d.id === "number" || typeof d.id === "string"
-      ? String(d.id)
-      : undefined;
+  const name = typeof d.name === "string" ? d.name.trim() : "";
+  if (!name) return null;
 
-  // The by-type list does not guarantee image_url. A valid device id
-  // gives us the official MobileAPI detail URL for provenance.
-  if (!name || !deviceId) return null;
+  const deviceId =
+    typeof d.id === "string" || typeof d.id === "number"
+      ? String(d.id)
+      : "";
+
+  if (!deviceId) return null;
 
   const manufacturerName =
-    typeof d.manufacturer_name === "string" ? d.manufacturer_name : "Unknown";
+    typeof d.manufacturer_name === "string" &&
+    d.manufacturer_name.trim().length > 0
+      ? d.manufacturer_name.trim()
+      : "Unknown";
+
   const modelIdentifier =
-    typeof d.model_numbers === "string" && d.model_numbers.length > 0
-      ? d.model_numbers
+    typeof d.model_numbers === "string" && d.model_numbers.trim().length > 0
+      ? d.model_numbers.trim()
       : undefined;
 
-  // specs intentionally empty — see SPEC_SLUG_MAP comment above. Left as
-  // a loop over the map (currently empty, so this never runs) rather than
-  // a hardcoded {} so populating SPEC_SLUG_MAP later is a one-line config
-  // change, not a rewrite of this function.
   const specs: Record<string, string> = {};
+
   for (const [rawField, slug] of Object.entries(SPEC_SLUG_MAP)) {
     const value = d[rawField];
-    if (typeof value === "string" && value.length > 0) specs[slug] = value;
+
+    if (typeof value === "string" && value.trim().length > 0) {
+      specs[slug] = value.trim();
+    }
   }
 
   return {
@@ -171,15 +141,7 @@ function mapDeviceToCandidate(raw: unknown, categorySlug: string): RawCandidate 
     modelIdentifier,
     categorySlug,
     specs,
-    // Left empty deliberately: MobileAPI's `storage` and `colors` fields
-    // are combined strings (e.g. "256GB, 512GB, 1TB") with no indication
-    // of which storage option pairs with which color — splitting them
-    // into discrete variants would mean guessing combinations that were
-    // never actually stated (brief §12: "Do not create placeholder data
-    // pretending to be real data").
     variants: [],
-    // No `price` field populated — MobileAPI is a product-data source
-    // here, not a price source (brief §16).
     sourceUrl: `${API_BASE}/devices/${encodeURIComponent(deviceId)}/`,
     sourceName: "MobileAPI.dev",
     sourceType: "database",
@@ -189,40 +151,40 @@ function mapDeviceToCandidate(raw: unknown, categorySlug: string): RawCandidate 
 
 async function fetchCandidates(categorySlug: string): Promise<RawCandidate[]> {
   const auth = readAuth();
-  if (!auth) {
-    // Expected, honest state — no credentials configured yet.
-    return [];
-  }
+  if (!auth) return [];
 
   const deviceType = CATEGORY_SLUG_TO_DEVICE_TYPE[categorySlug];
-  if (!deviceType) {
-    // GadGexo asked for a category this provider doesn't know how to map
-    // to a MobileAPI device_type yet. Not an error — nothing found.
-    return [];
-  }
+  if (!deviceType) return [];
 
   const candidates: RawCandidate[] = [];
 
   for (let page = 1; page <= MAX_LIST_PAGES; page += 1) {
     if (candidates.length >= MAX_CANDIDATES_PER_RUN) break;
 
-    const url = `${API_BASE}/devices/by-year/?year=${year}&page=${page}`;
+    const url =
+      `${API_BASE}/devices/by-type/?type=${encodeURIComponent(deviceType)}` +
+      `&page=${page}`;
+
     const response = await fetchWithRetry(url, auth);
     const payload = await safeJson(response);
+
     if (payload === null) break;
 
     const rawDevices = extractDeviceArray(payload);
-    if (rawDevices.length === 0) break; // no more data — legitimate end, not an error
+    if (rawDevices.length === 0) break;
 
     for (const rawDevice of rawDevices) {
       if (candidates.length >= MAX_CANDIDATES_PER_RUN) break;
-
       if (!rawDevice || typeof rawDevice !== "object") continue;
 
-      // by-type already filters server-side. Validate device_type when the
-      // response includes it, but do not reject valid records if omitted.
-      const rawType = (rawDevice as Record<string, unknown>).device_type;
-      if (typeof rawType === "string" && rawType !== deviceType) continue;
+      const rawDeviceType = (rawDevice as Record<string, unknown>).device_type;
+
+      if (
+        typeof rawDeviceType === "string" &&
+        rawDeviceType !== deviceType
+      ) {
+        continue;
+      }
 
       const mapped = mapDeviceToCandidate(rawDevice, categorySlug);
       if (mapped) candidates.push(mapped);
