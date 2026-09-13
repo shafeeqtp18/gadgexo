@@ -24,8 +24,7 @@ export default async function AdminAutomationPage() {
       <div>
         <h1 className="mb-2 text-h1">Automation</h1>
         <p className="max-w-xl text-small text-muted-foreground">
-          This is the global control switch for GadGexo's autonomous data agent. It ships disabled, and nothing writes to the catalog
-          automatically until you both enable it here AND connect a real source (see below).
+          This is the global control switch for GadGexo&apos;s autonomous data agent. It ships disabled, and nothing writes to the catalog
         </p>
       </div>
 
