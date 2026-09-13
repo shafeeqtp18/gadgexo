@@ -29,7 +29,7 @@ export function RunDiscoveryButton() {
           </p>
           {result.noProviderWarning && (
             <p className="mt-1 text-caption text-muted-foreground">
-              No source provider is registered yet, so this run discovered 0 candidates — see "Source Configuration" below.
+              No source provider is registered yet, so this run discovered 0 candidates — see &quot;Source Configuration&quot; below.
             </p>
           )}
         </div>
