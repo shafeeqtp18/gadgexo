@@ -76,14 +76,6 @@ function readAuth(): MobileApiAuth | null {
  * across multiple years over time — not something this single function
  * call does on its own.
  */
-function getTargetYear(): number {
-  const override = process.env.MOBILEAPI_TARGET_YEAR;
-  if (override) {
-    const parsed = Number(override);
-    if (Number.isInteger(parsed) && parsed > 2000) return parsed;
-  }
-  return new Date().getFullYear();
-}
 
 async function fetchWithRetry(url: string, auth: MobileApiAuth, attempt = 1): Promise<Response> {
   const response = await fetch(url, {
@@ -151,13 +143,14 @@ function mapDeviceToCandidate(raw: unknown, categorySlug: string): RawCandidate 
   const d = raw as Record<string, unknown>;
 
   const name = typeof d.name === "string" ? d.name : undefined;
-  const imageUrl = typeof d.image_url === "string" ? d.image_url : undefined;
-  if (!name || !imageUrl) {
-    // No confident real URL to use as sourceUrl (see file header) —
-    // without it we can't honestly satisfy "sourceUrl must always be a
-    // real, parseable URL", so skip rather than invent one.
-    return null;
-  }
+  const deviceId =
+    typeof d.id === "number" || typeof d.id === "string"
+      ? String(d.id)
+      : undefined;
+
+  // The by-type list does not guarantee image_url. A valid device id
+  // gives us the official MobileAPI detail URL for provenance.
+  if (!name || !deviceId) return null;
 
   const manufacturerName =
     typeof d.manufacturer_name === "string" ? d.manufacturer_name : "Unknown";
@@ -191,7 +184,7 @@ function mapDeviceToCandidate(raw: unknown, categorySlug: string): RawCandidate 
     variants: [],
     // No `price` field populated — MobileAPI is a product-data source
     // here, not a price source (brief §16).
-    sourceUrl: imageUrl,
+    sourceUrl: `${API_BASE}/devices/${encodeURIComponent(deviceId)}/`,
     sourceName: "MobileAPI.dev",
     sourceType: "database",
     observedAt: new Date().toISOString(),
@@ -212,12 +205,13 @@ async function fetchCandidates(categorySlug: string): Promise<RawCandidate[]> {
     return [];
   }
 
+  const year = getTargetYear();
   const candidates: RawCandidate[] = [];
 
   for (let page = 1; page <= MAX_LIST_PAGES; page += 1) {
     if (candidates.length >= MAX_CANDIDATES_PER_RUN) break;
 
-    const url = `${API_BASE}/devices/by-type/?type=phone&page=${page}`;
+    const url = `${API_BASE}/devices/by-year/?year=${year}&page=${page}`;
     const response = await fetchWithRetry(url, auth);
     const payload = await safeJson(response);
     if (payload === null) break;
@@ -228,13 +222,12 @@ async function fetchCandidates(categorySlug: string): Promise<RawCandidate[]> {
     for (const rawDevice of rawDevices) {
       if (candidates.length >= MAX_CANDIDATES_PER_RUN) break;
 
-      if (
-        !rawDevice ||
-        typeof rawDevice !== "object" ||
-        (rawDevice as Record<string, unknown>).device_type !== deviceType
-      ) {
-        continue; // by-year isn't type-filtered server-side; filter client-side
-      }
+      if (!rawDevice || typeof rawDevice !== "object") continue;
+
+      // by-type already filters server-side. Validate device_type when the
+      // response includes it, but do not reject valid records if omitted.
+      const rawType = (rawDevice as Record<string, unknown>).device_type;
+      if (typeof rawType === "string" && rawType !== deviceType) continue;
 
       const mapped = mapDeviceToCandidate(rawDevice, categorySlug);
       if (mapped) candidates.push(mapped);
