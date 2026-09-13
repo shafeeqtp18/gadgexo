@@ -69,12 +69,8 @@ function readAuth(): MobileApiAuth | null {
 }
 
 /**
- * Configurable recency cutoff (brief §8: "should be configurable rather
- * than hard-coded"). Defaults to the current year. `/devices/by-year/`
- * (per its third-party-documented signature) takes one 4-digit year, not
- * a range, so wider coverage means calling this provider's category
- * across multiple years over time — not something this single function
- * call does on its own.
+ * Discovery uses the official `/devices/by-type/` endpoint with
+ * `type=phone`, so no year filter is applied at this stage.
  */
 
 async function fetchWithRetry(url: string, auth: MobileApiAuth, attempt = 1): Promise<Response> {
@@ -205,7 +201,6 @@ async function fetchCandidates(categorySlug: string): Promise<RawCandidate[]> {
     return [];
   }
 
-  const year = getTargetYear();
   const candidates: RawCandidate[] = [];
 
   for (let page = 1; page <= MAX_LIST_PAGES; page += 1) {
