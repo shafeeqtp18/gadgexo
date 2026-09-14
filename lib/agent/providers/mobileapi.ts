@@ -151,9 +151,17 @@ function mapDeviceToCandidate(
 
 async function fetchCandidates(categorySlug: string): Promise<RawCandidate[]> {
   const auth = readAuth();
+  // DIAGNOSTIC: point 1 — auth presence only, never the key value.
+  console.log(`[mobileapi] auth present: ${auth !== null}`);
   if (!auth) return [];
 
   const deviceType = CATEGORY_SLUG_TO_DEVICE_TYPE[categorySlug];
+  // DIAGNOSTIC: point 2 — categorySlug in vs deviceType resolved out.
+  console.log(
+    `[mobileapi] categorySlug="${categorySlug}" -> deviceType=${
+      deviceType ?? "undefined"
+    }`,
+  );
   if (!deviceType) return [];
 
   const candidates: RawCandidate[] = [];
@@ -166,30 +174,69 @@ async function fetchCandidates(categorySlug: string): Promise<RawCandidate[]> {
       `&page=${page}`;
 
     const response = await fetchWithRetry(url, auth);
+    // DIAGNOSTIC: point 3 — HTTP status only.
+    console.log(`[mobileapi] page ${page} response.status: ${response.status}`);
+
     const payload = await safeJson(response);
+    // DIAGNOSTIC: point 4 — null-ness and, if an object, only its key
+    // names (never values — no response body, no image_b64).
+    if (payload === null) {
+      console.log(`[mobileapi] page ${page} payload: null (JSON parse failed or empty body)`);
+    } else if (typeof payload === "object") {
+      console.log(
+        `[mobileapi] page ${page} payload top-level keys: ${Object.keys(
+          payload as Record<string, unknown>,
+        ).join(", ")}`,
+      );
+    } else {
+      console.log(`[mobileapi] page ${page} payload typeof: ${typeof payload}`);
+    }
 
     if (payload === null) break;
 
     const rawDevices = extractDeviceArray(payload);
+    // DIAGNOSTIC: point 5 — count only.
+    console.log(`[mobileapi] page ${page} rawDevices.length: ${rawDevices.length}`);
     if (rawDevices.length === 0) break;
+
+    // DIAGNOSTIC: point 6 — per-page counters, logged after the loop below.
+    let rejectedByTypeFilter = 0;
+    let passedToMapper = 0;
+    let mapperReturnedNull = 0;
+    let createdThisPage = 0;
 
     for (const rawDevice of rawDevices) {
       if (candidates.length >= MAX_CANDIDATES_PER_RUN) break;
-      if (!rawDevice || typeof rawDevice !== "object") continue;
-
-      const rawDeviceType = (rawDevice as Record<string, unknown>).device_type;
 
       if (
-        typeof rawDeviceType === "string" &&
-        rawDeviceType !== deviceType
+        !rawDevice ||
+        typeof rawDevice !== "object" ||
+        (rawDevice as Record<string, unknown>).device_type !== deviceType
       ) {
+        rejectedByTypeFilter += 1;
         continue;
       }
 
+      passedToMapper += 1;
       const mapped = mapDeviceToCandidate(rawDevice, categorySlug);
-      if (mapped) candidates.push(mapped);
+      if (mapped) {
+        candidates.push(mapped);
+        createdThisPage += 1;
+      } else {
+        mapperReturnedNull += 1;
+      }
     }
+
+    // DIAGNOSTIC: point 6 (continued) — the four counts requested.
+    console.log(
+      `[mobileapi] page ${page} counts: rejectedByTypeFilter=${rejectedByTypeFilter}, ` +
+        `passedToMapper=${passedToMapper}, mapperReturnedNull=${mapperReturnedNull}, ` +
+        `createdThisPage=${createdThisPage}`,
+    );
   }
+
+  // DIAGNOSTIC: point 7 — final count only.
+  console.log(`[mobileapi] final candidates.length: ${candidates.length}`);
 
   return candidates;
 }
