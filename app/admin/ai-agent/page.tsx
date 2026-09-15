@@ -3,132 +3,103 @@
 import { useState } from "react";
 
 type Source = {
-  source_id: string;
+  id: string;
   title: string;
   url: string;
-  content: string;
+  domain?: string;
+  quality?: string;
 };
 
 type Evidence = {
   source_id: string;
-  claim: string;
+  field?: string;
+  quote?: string;
+};
+
+type FieldConfidence = {
+  score?: number;
+  level?: string;
+  reason?: string;
+};
+
+type Verification = {
+  verified?: boolean;
+  review_required?: boolean;
+  overall_score?: number;
+  confidence_level?: string;
+  reasons?: string[];
+  fields?: {
+    model?: FieldConfidence;
+    price_inr?: FieldConfidence;
+    availability?: FieldConfidence;
+    launch_date?: FieldConfidence;
+  };
 };
 
 type Phone = {
-  name: string;
-  brand: string;
-  availability_in_india:
-    | "available"
-    | "upcoming"
-    | "announced"
-    | "uncertain"
-    | "not_found";
-  price_inr: number | null;
+  model: string;
+  brand?: string;
+  category?: string;
+  market?: string;
+  availability?: string;
+  price_inr?: number | null;
   launch_date?: string | null;
   india_launch_date?: string | null;
-  source_ids: string[];
-  evidence: Evidence[];
-  notes: string;
-};
-
-type SourceQuality = {
-  source_id: string;
-  quality: "high" | "medium" | "low";
-  reason: string;
+  source_ids?: string[];
+  evidence?: Evidence[];
+  notes?: string[];
+  verification?: Verification;
 };
 
 type ResearchResult = {
-  success: boolean;
-  query: string;
-  model: string;
-  source_count: number;
-  sources: Source[];
-  research: {
-    phones: Phone[];
-    research_notes: string[];
-    source_quality: SourceQuality[];
+  success?: boolean;
+  phase?: string;
+  model?: string;
+  query?: string;
+  phones?: Phone[];
+  sources?: Source[];
+  research_notes?: string[];
+  verification_summary?: {
+    phones_found?: number;
+    verified_phones?: number;
+    review_required?: number;
+    average_confidence?: number;
+    confidence_system?: string;
   };
-  persisted: boolean;
-  validation: {
-    anti_hallucination: boolean;
-    evidence_required: boolean;
-    database_write: boolean;
+  validation?: {
+    source_verification?: boolean;
+    confidence_scoring?: boolean;
     date_aware?: boolean;
+    database_write?: boolean;
   };
+  persisted?: boolean;
   usage?: {
     tavily_searches?: number;
     tavily_max_results?: number;
     credit_saver?: boolean;
     note?: string;
   };
+  error?: string;
 };
 
-function formatPrice(price: number | null) {
-  if (price === null) {
-    return "Price not found";
-  }
+const DEFAULT_QUERY =
+  "Find the latest Samsung smartphones available in India.";
 
-  return new Intl.NumberFormat("en-IN", {
-    style: "currency",
-    currency: "INR",
-    maximumFractionDigits: 0,
-  }).format(price);
-}
-
-function availabilityLabel(
-  status: Phone["availability_in_india"]
-) {
-  switch (status) {
-    case "available":
-      return "Available in India";
-    case "upcoming":
-      return "Upcoming in India";
-    case "announced":
-      return "Announced";
-    case "uncertain":
-      return "Uncertain";
-    case "not_found":
-      return "India availability not found";
-    default:
-      return "Unknown";
-  }
-}
-
-function qualityLabel(
-  quality: "high" | "medium" | "low"
-) {
-  switch (quality) {
-    case "high":
-      return "High";
-    case "medium":
-      return "Medium";
-    case "low":
-      return "Low";
-    default:
-      return "Unknown";
-  }
-}
-
-export default function AdminAIAgentPage() {
-  const [query, setQuery] = useState(
-    "Find the latest Samsung smartphones available in India."
-  );
-
+export default function AdminAiAgentPage() {
   const [brand, setBrand] = useState("Samsung");
   const [category, setCategory] = useState("Smartphones");
   const [market, setMarket] = useState("India");
 
-  const [result, setResult] =
-    useState<ResearchResult | null>(null);
-
+  const [query, setQuery] = useState(DEFAULT_QUERY);
+  const [result, setResult] = useState<ResearchResult | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState("");
 
-  function buildQuery() {
-    const newQuery = `Find the latest ${brand} ${category.toLowerCase()} available in ${market}.`;
+  function buildPresetQuery() {
+    const builtQuery = `Find the latest ${brand} ${category.toLowerCase()} available in ${market}.`;
 
-    setQuery(newQuery);
-    setError(null);
+    setQuery(builtQuery);
+    setError("");
   }
 
   async function runResearch() {
@@ -140,218 +111,173 @@ export default function AdminAIAgentPage() {
     }
 
     if (trimmedQuery.length > 500) {
-      setError(
-        "Research query must be 500 characters or less."
-      );
+      setError("Research query must be 500 characters or less.");
       return;
     }
 
     setLoading(true);
-    setError(null);
+    setError("");
     setResult(null);
 
     try {
-      const response = await fetch(
-        "/api/ai-agent/research",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          cache: "no-store",
-          body: JSON.stringify({
-            query: trimmedQuery,
-          }),
-        }
-      );
+      const response = await fetch("/api/ai-agent/research", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          query: trimmedQuery,
+        }),
+      });
 
       const data = await response.json();
 
       if (!response.ok || !data.success) {
-        throw new Error(
-          data?.error || "AI research request failed"
-        );
+        throw new Error(data.error || "Research request failed.");
       }
 
       setResult(data);
     } catch (err) {
       setError(
-        err instanceof Error
-          ? err.message
-          : "Something went wrong"
+        err instanceof Error ? err.message : "Research request failed."
       );
     } finally {
       setLoading(false);
     }
   }
 
+  function formatPrice(price?: number | null) {
+    if (price === null || price === undefined) {
+      return "Not found";
+    }
+
+    return `₹${price.toLocaleString("en-IN")}`;
+  }
+
+  function availabilityLabel(value?: string) {
+    if (!value) return "Unknown";
+
+    return value
+      .replaceAll("_", " ")
+      .replace(/\b\w/g, (char) => char.toUpperCase());
+  }
+
+  function qualityLabel(value?: string) {
+    if (!value) return "Unknown";
+    return value.replace(/\b\w/g, (char) => char.toUpperCase());
+  }
+
   return (
-    <main className="space-y-6 p-6">
-      {/* Header */}
-      <section>
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">
-              AI Research Agent
-            </h1>
-
-            <p className="mt-1 text-sm text-muted-foreground">
-              Research gadget information from web sources
-              and extract structured data with evidence.
-            </p>
-          </div>
+    <main className="min-h-screen bg-background p-4 md:p-6">
+      <div className="mx-auto max-w-6xl space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold">AI Research Agent</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Research gadget information using web evidence and AI extraction.
+          </p>
         </div>
-      </section>
 
-      {/* Research Controls */}
-      <section className="rounded-lg border bg-card p-5">
-        <div className="space-y-5">
-          <div>
-            <h2 className="text-lg font-semibold">
-              Research Request
-            </h2>
-
-            <p className="mt-1 text-sm text-muted-foreground">
-              Create a custom research request or build one
-              using the options below.
+        {/* Research Request */}
+        <section className="rounded-xl border bg-card p-5">
+          <div className="mb-5">
+            <h2 className="text-lg font-semibold">Research Request</h2>
+            <p className="text-sm text-muted-foreground">
+              Create a custom research request or build one using the options
+              below.
             </p>
           </div>
 
-          {/* Options */}
           <div className="grid gap-4 md:grid-cols-3">
-            <div className="space-y-2">
-              <label
-                htmlFor="brand"
-                className="text-sm font-medium"
-              >
-                Brand
-              </label>
+            <div>
+              <label className="mb-2 block text-sm font-medium">Brand</label>
 
               <select
-                id="brand"
                 value={brand}
-                onChange={(event) =>
-                  setBrand(event.target.value)
-                }
+                onChange={(e) => setBrand(e.target.value)}
                 className="w-full rounded-md border bg-background px-3 py-2 text-sm"
               >
-                <option value="Samsung">Samsung</option>
-                <option value="Apple">Apple</option>
-                <option value="OnePlus">OnePlus</option>
-                <option value="Xiaomi">Xiaomi</option>
-                <option value="Oppo">Oppo</option>
-                <option value="Vivo">Vivo</option>
-                <option value="Realme">Realme</option>
-                <option value="Google">Google</option>
-                <option value="Motorola">Motorola</option>
-                <option value="Nothing">Nothing</option>
+                <option>Samsung</option>
+                <option>Apple</option>
+                <option>OnePlus</option>
+                <option>Xiaomi</option>
+                <option>Oppo</option>
+                <option>Vivo</option>
+                <option>Realme</option>
+                <option>Google</option>
+                <option>Motorola</option>
+                <option>Nothing</option>
               </select>
             </div>
 
-            <div className="space-y-2">
-              <label
-                htmlFor="category"
-                className="text-sm font-medium"
-              >
+            <div>
+              <label className="mb-2 block text-sm font-medium">
                 Category
               </label>
 
               <select
-                id="category"
                 value={category}
-                onChange={(event) =>
-                  setCategory(event.target.value)
-                }
+                onChange={(e) => setCategory(e.target.value)}
                 className="w-full rounded-md border bg-background px-3 py-2 text-sm"
               >
-                <option value="Smartphones">
-                  Smartphones
-                </option>
-                <option value="Tablets">Tablets</option>
-                <option value="Laptops">Laptops</option>
-                <option value="Smartwatches">
-                  Smartwatches
-                </option>
-                <option value="Earbuds">Earbuds</option>
-                <option value="Cameras">Cameras</option>
+                <option>Smartphones</option>
+                <option>Tablets</option>
+                <option>Laptops</option>
+                <option>Smartwatches</option>
+                <option>Earbuds</option>
+                <option>Cameras</option>
               </select>
             </div>
 
-            <div className="space-y-2">
-              <label
-                htmlFor="market"
-                className="text-sm font-medium"
-              >
-                Market
-              </label>
+            <div>
+              <label className="mb-2 block text-sm font-medium">Market</label>
 
               <select
-                id="market"
                 value={market}
-                onChange={(event) =>
-                  setMarket(event.target.value)
-                }
+                onChange={(e) => setMarket(e.target.value)}
                 className="w-full rounded-md border bg-background px-3 py-2 text-sm"
               >
-                <option value="India">India</option>
-                <option value="United Arab Emirates">
-                  UAE
-                </option>
-                <option value="United States">USA</option>
-                <option value="United Kingdom">UK</option>
+                <option>India</option>
+                <option>UAE</option>
+                <option>USA</option>
+                <option>UK</option>
               </select>
             </div>
           </div>
 
-          {/* Build Query */}
-          <div>
-            <button
-              type="button"
-              onClick={buildQuery}
-              className="rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-muted"
-            >
-              Build Query from Options
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={buildPresetQuery}
+            className="mt-4 rounded-md border px-4 py-2 text-sm font-medium hover:bg-muted"
+          >
+            Build Query from Options
+          </button>
 
-          {/* Custom Query */}
-          <div className="space-y-2">
-            <label
-              htmlFor="research-query"
-              className="text-sm font-medium"
-            >
+          <div className="mt-5">
+            <label className="mb-2 block text-sm font-medium">
               Research Query
             </label>
 
             <textarea
-              id="research-query"
               value={query}
-              onChange={(event) =>
-                setQuery(event.target.value)
-              }
+              onChange={(e) => setQuery(e.target.value)}
               maxLength={500}
               rows={4}
+              className="w-full resize-y rounded-md border bg-background px-3 py-3 text-sm"
               placeholder="Example: Find the latest Samsung smartphones available in India."
-              className="w-full resize-y rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
             />
 
-            <div className="flex flex-col gap-2 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
-              <span>
-                Custom query is sent to the Phase 11B
-                research API.
-              </span>
-
+            <div className="mt-1 flex justify-between text-xs text-muted-foreground">
+              <span>Custom query is sent to the research API.</span>
               <span>{query.length}/500</span>
             </div>
           </div>
 
-          {/* Run Research */}
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <div className="mt-4 flex items-center gap-3">
             <button
               type="button"
               onClick={runResearch}
               disabled={loading}
-              className="inline-flex items-center justify-center rounded-md bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground shadow-sm transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-md bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50"
             >
               {loading ? "Researching..." : "Run Research"}
             </button>
@@ -360,465 +286,437 @@ export default function AdminAIAgentPage() {
               One Tavily search per research request.
             </span>
           </div>
-        </div>
-      </section>
 
-      {/* Phase Status */}
-      <section className="rounded-lg border bg-card p-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h2 className="font-medium">
-              Phase 11B Research Mode
-            </h2>
+          {error && (
+            <div className="mt-4 rounded-md border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-400">
+              {error}
+            </div>
+          )}
+        </section>
 
-            <p className="mt-1 text-sm text-muted-foreground">
-              Research results are temporary. No product
-              data is written to the database.
-            </p>
+        {/* Phase */}
+        <section className="rounded-xl border bg-card p-5">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <h2 className="font-semibold">Phase 11C Research Mode</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Research results are temporary. No product data is written to
+                the database.
+              </p>
+            </div>
+
+            <span className="rounded-full border px-3 py-1 text-xs">
+              POC • No DB Write
+            </span>
           </div>
-
-          <span className="inline-flex w-fit rounded-full border px-3 py-1 text-xs font-medium">
-            POC • No DB Write
-          </span>
-        </div>
-      </section>
-
-      {/* Error */}
-      {error && (
-        <section className="rounded-lg border border-destructive/40 bg-destructive/5 p-4">
-          <h2 className="font-medium text-destructive">
-            Research failed
-          </h2>
-
-          <p className="mt-1 text-sm text-muted-foreground">
-            {error}
-          </p>
         </section>
-      )}
 
-      {/* Loading */}
-      {loading && (
-        <section className="rounded-lg border bg-card p-8 text-center">
-          <p className="text-sm text-muted-foreground">
-            Searching web sources and extracting
-            structured gadget data...
-          </p>
-        </section>
-      )}
+        {/* Summary */}
+        {result && (
+          <>
+            <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+              <div className="rounded-xl border bg-card p-4">
+                <p className="text-xs text-muted-foreground">Model</p>
+                <p className="mt-1 font-semibold">
+                  {result.model || "Unknown"}
+                </p>
+              </div>
 
-      {/* Results */}
-      {result && !loading && (
-        <>
-          {/* Summary */}
-          <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-            <div className="rounded-lg border bg-card p-4">
-              <p className="text-xs text-muted-foreground">
-                Model
-              </p>
+              <div className="rounded-xl border bg-card p-4">
+                <p className="text-xs text-muted-foreground">Sources</p>
+                <p className="mt-1 text-xl font-bold">
+                  {result.sources?.length || 0}
+                </p>
+              </div>
 
-              <p className="mt-1 font-medium">
-                {result.model}
-              </p>
-            </div>
+              <div className="rounded-xl border bg-card p-4">
+                <p className="text-xs text-muted-foreground">Phones Found</p>
+                <p className="mt-1 text-xl font-bold">
+                  {result.verification_summary?.phones_found ??
+                    result.phones?.length ??
+                    0}
+                </p>
+              </div>
 
-            <div className="rounded-lg border bg-card p-4">
-              <p className="text-xs text-muted-foreground">
-                Sources
-              </p>
+              <div className="rounded-xl border bg-card p-4">
+                <p className="text-xs text-muted-foreground">Verified</p>
+                <p className="mt-1 text-xl font-bold">
+                  {result.verification_summary?.verified_phones ?? 0}
+                </p>
+              </div>
 
-              <p className="mt-1 text-xl font-semibold">
-                {result.source_count}
-              </p>
-            </div>
-
-            <div className="rounded-lg border bg-card p-4">
-              <p className="text-xs text-muted-foreground">
-                Phones Found
-              </p>
-
-              <p className="mt-1 text-xl font-semibold">
-                {result.research.phones.length}
-              </p>
-            </div>
-
-            <div className="rounded-lg border bg-card p-4">
-              <p className="text-xs text-muted-foreground">
-                Tavily Searches
-              </p>
-
-              <p className="mt-1 text-xl font-semibold">
-                {result.usage?.tavily_searches ?? 1}
-              </p>
-            </div>
-
-            <div className="rounded-lg border bg-card p-4">
-              <p className="text-xs text-muted-foreground">
-                Database Write
-              </p>
-
-              <p className="mt-1 font-semibold">
-                {result.persisted ? "Yes" : "No"}
-              </p>
-            </div>
-          </section>
-
-          {/* Credit Saver */}
-          {result.usage && (
-            <section className="rounded-lg border bg-card p-4">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <h2 className="font-medium">
-                    Credit Saver
-                  </h2>
-
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {result.usage.note ||
-                      "One web search is used per research request."}
-                  </p>
-                </div>
-
-                <span className="w-fit rounded-full border px-3 py-1 text-xs font-medium">
-                  {result.usage.credit_saver
-                    ? "Enabled"
-                    : "Standard"}
-                </span>
+              <div className="rounded-xl border bg-card p-4">
+                <p className="text-xs text-muted-foreground">
+                  Tavily Searches
+                </p>
+                <p className="mt-1 text-xl font-bold">
+                  {result.usage?.tavily_searches ?? 0}
+                </p>
               </div>
             </section>
-          )}
 
-          {/* Query */}
-          <section className="rounded-lg border bg-card p-4">
-            <p className="text-xs text-muted-foreground">
-              Research query
-            </p>
-
-            <p className="mt-1 text-sm font-medium">
-              {result.query}
-            </p>
-          </section>
-
-          {/* Phones */}
-          <section className="space-y-4">
-            <div>
-              <h2 className="text-lg font-semibold">
-                Research Results
-              </h2>
-
-              <p className="text-sm text-muted-foreground">
-                Extracted phones with source evidence.
+            {/* Research Query */}
+            <section className="rounded-xl border bg-card p-5">
+              <p className="text-xs text-muted-foreground">Research query</p>
+              <p className="mt-1 break-words font-medium">
+                {result.query || query}
               </p>
-            </div>
+            </section>
 
-            {result.research.phones.length === 0 ? (
-              <div className="rounded-lg border bg-card p-6 text-sm text-muted-foreground">
-                No phones passed the evidence validation.
+            {/* Research Results */}
+            <section>
+              <div className="mb-3">
+                <h2 className="text-lg font-semibold">Research Results</h2>
+                <p className="text-sm text-muted-foreground">
+                  Extracted phones with source evidence and verification.
+                </p>
               </div>
-            ) : (
-              <div className="grid gap-4">
-                {result.research.phones.map((phone) => (
-                  <article
-                    key={`${phone.name}-${phone.source_ids.join(
-                      "-"
-                    )}`}
-                    className="rounded-lg border bg-card p-5"
-                  >
-                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                      <div>
-                        <h3 className="text-lg font-semibold">
-                          {phone.name}
-                        </h3>
 
-                        <p className="text-sm text-muted-foreground">
-                          {phone.brand}
-                        </p>
-                      </div>
+              {!result.phones || result.phones.length === 0 ? (
+                <div className="rounded-xl border bg-card p-6 text-sm text-muted-foreground">
+                  No phones passed the evidence validation.
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {result.phones.map((phone, index) => (
+                    <article
+                      key={`${phone.model}-${index}`}
+                      className="rounded-xl border bg-card p-5"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <h3 className="text-lg font-bold">
+                            {phone.model}
+                          </h3>
 
-                      <div className="flex flex-wrap gap-2">
-                        <span className="rounded-full border px-3 py-1 text-xs font-medium">
-                          {availabilityLabel(
-                            phone.availability_in_india
-                          )}
-                        </span>
-
-                        <span className="rounded-full border px-3 py-1 text-xs font-medium">
-                          {formatPrice(phone.price_inr)}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Dates */}
-                    {(phone.launch_date ||
-                      phone.india_launch_date) && (
-                      <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                        {phone.launch_date && (
-                          <div className="rounded-md border p-3">
-                            <p className="text-xs text-muted-foreground">
-                              Launch Date
-                            </p>
-
-                            <p className="mt-1 text-sm font-medium">
-                              {phone.launch_date}
-                            </p>
-                          </div>
-                        )}
-
-                        {phone.india_launch_date && (
-                          <div className="rounded-md border p-3">
-                            <p className="text-xs text-muted-foreground">
-                              India Launch Date
-                            </p>
-
-                            <p className="mt-1 text-sm font-medium">
-                              {phone.india_launch_date}
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Evidence */}
-                    <div className="mt-5 space-y-3">
-                      <h4 className="text-sm font-semibold">
-                        Evidence
-                      </h4>
-
-                      {phone.evidence.length === 0 ? (
-                        <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-muted-foreground">
-                          No evidence returned.
+                          <p className="mt-1 text-sm text-muted-foreground">
+                            {phone.brand || brand} •{" "}
+                            {phone.category || category} •{" "}
+                            {phone.market || market}
+                          </p>
                         </div>
-                      ) : (
-                        phone.evidence.map(
-                          (evidence, index) => (
-                            <div
-                              key={`${evidence.source_id}-${index}`}
-                              className="rounded-md border bg-muted/30 p-3"
-                            >
-                              <p className="text-xs font-medium text-muted-foreground">
-                                {evidence.source_id}
-                              </p>
 
-                              <p className="mt-1 text-sm">
-                                {evidence.claim}
-                              </p>
-                            </div>
-                          )
-                        )
+                        <div className="flex flex-wrap gap-2">
+                          <span className="rounded-full border px-3 py-1 text-xs">
+                            {availabilityLabel(phone.availability)}
+                          </span>
+
+                          {phone.verification && (
+                            <span className="rounded-full border px-3 py-1 text-xs">
+                              {phone.verification.verified
+                                ? "Verified"
+                                : "Review Required"}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                        <div className="rounded-lg border p-3">
+                          <p className="text-xs text-muted-foreground">
+                            Price
+                          </p>
+                          <p className="mt-1 font-semibold">
+                            {formatPrice(phone.price_inr)}
+                          </p>
+                        </div>
+
+                        <div className="rounded-lg border p-3">
+                          <p className="text-xs text-muted-foreground">
+                            Launch Date
+                          </p>
+                          <p className="mt-1 font-semibold">
+                            {phone.launch_date || "Not found"}
+                          </p>
+                        </div>
+
+                        <div className="rounded-lg border p-3">
+                          <p className="text-xs text-muted-foreground">
+                            India Launch
+                          </p>
+                          <p className="mt-1 font-semibold">
+                            {phone.india_launch_date || "Not found"}
+                          </p>
+                        </div>
+
+                        <div className="rounded-lg border p-3">
+                          <p className="text-xs text-muted-foreground">
+                            Confidence
+                          </p>
+                          <p className="mt-1 font-semibold">
+                            {phone.verification?.overall_score ?? "—"}
+                            {phone.verification?.confidence_level
+                              ? ` • ${qualityLabel(
+                                  phone.verification.confidence_level
+                                )}`
+                              : ""}
+                          </p>
+                        </div>
+                      </div>
+
+                      {phone.verification?.reasons &&
+                        phone.verification.reasons.length > 0 && (
+                          <div className="mt-5">
+                            <h4 className="font-semibold">
+                              Verification Reasons
+                            </h4>
+
+                            <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+                              {phone.verification.reasons.map(
+                                (reason, reasonIndex) => (
+                                  <li key={reasonIndex}>{reason}</li>
+                                )
+                              )}
+                            </ul>
+                          </div>
+                        )}
+
+                      {phone.evidence && phone.evidence.length > 0 && (
+                        <div className="mt-5">
+                          <h4 className="font-semibold">Evidence</h4>
+
+                          <div className="mt-2 space-y-2">
+                            {phone.evidence.map((item, evidenceIndex) => (
+                              <div
+                                key={`${item.source_id}-${evidenceIndex}`}
+                                className="rounded-lg border p-3"
+                              >
+                                <p className="text-xs font-medium">
+                                  {item.source_id}
+                                  {item.field ? ` • ${item.field}` : ""}
+                                </p>
+
+                                {item.quote && (
+                                  <p className="mt-1 text-sm text-muted-foreground">
+                                    {item.quote}
+                                  </p>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
                       )}
-                    </div>
 
-                    {/* Source IDs */}
-                    {phone.source_ids.length > 0 && (
-                      <div className="mt-4">
-                        <h4 className="text-sm font-semibold">
-                          Source IDs
-                        </h4>
+                      {phone.source_ids && phone.source_ids.length > 0 && (
+                        <div className="mt-5">
+                          <h4 className="font-semibold">Source IDs</h4>
 
-                        <div className="mt-2 flex flex-wrap gap-2">
-                          {phone.source_ids.map(
-                            (sourceId) => (
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {phone.source_ids.map((sourceId) => (
                               <span
                                 key={sourceId}
-                                className="rounded-full border px-2 py-1 text-xs"
+                                className="rounded-full border px-3 py-1 text-xs"
                               >
                                 {sourceId}
                               </span>
-                            )
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {phone.notes && phone.notes.length > 0 && (
+                        <div className="mt-5">
+                          <h4 className="font-semibold">Notes</h4>
+
+                          <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+                            {phone.notes.map((note, noteIndex) => (
+                              <li key={noteIndex}>{note}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </article>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            {/* Source Quality */}
+            <section>
+              <div className="mb-3">
+                <h2 className="text-lg font-semibold">Source Quality</h2>
+                <p className="text-sm text-muted-foreground">
+                  Quality assessment returned by the research agent.
+                </p>
+              </div>
+
+              <div className="overflow-hidden rounded-xl border bg-card">
+                {result.sources && result.sources.length > 0 ? (
+                  result.sources.map((source, index) => (
+                    <div
+                      key={source.id || index}
+                      className="border-b p-4 last:border-b-0"
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="min-w-0">
+                          <p className="font-medium">
+                            {source.id || `source_${index + 1}`}
+                          </p>
+
+                          <p className="mt-1 text-sm text-muted-foreground">
+                            {source.title || "Untitled source"}
+                          </p>
+
+                          {source.domain && (
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              {source.domain}
+                            </p>
                           )}
                         </div>
-                      </div>
-                    )}
 
-                    {/* Notes */}
-                    {phone.notes && (
-                      <div className="mt-4">
-                        <h4 className="text-sm font-semibold">
-                          Notes
-                        </h4>
-
-                        <p className="mt-1 text-sm text-muted-foreground">
-                          {phone.notes}
-                        </p>
-                      </div>
-                    )}
-                  </article>
-                ))}
-              </div>
-            )}
-          </section>
-
-          {/* Source Quality */}
-          <section className="space-y-4">
-            <div>
-              <h2 className="text-lg font-semibold">
-                Source Quality
-              </h2>
-
-              <p className="text-sm text-muted-foreground">
-                Quality assessment returned by the research
-                agent.
-              </p>
-            </div>
-
-            <div className="overflow-hidden rounded-lg border">
-              <div className="divide-y">
-                {result.research.source_quality.map(
-                  (source) => (
-                    <div
-                      key={source.source_id}
-                      className="flex flex-col gap-2 p-4 sm:flex-row sm:items-center sm:justify-between"
-                    >
-                      <div>
-                        <p className="text-sm font-medium">
-                          {source.source_id}
-                        </p>
-
-                        <p className="text-sm text-muted-foreground">
-                          {source.reason}
-                        </p>
+                        <span className="shrink-0 rounded-full border px-3 py-1 text-xs">
+                          {qualityLabel(source.quality)}
+                        </span>
                       </div>
 
-                      <span className="w-fit rounded-full border px-3 py-1 text-xs font-medium">
-                        {qualityLabel(source.quality)}
-                      </span>
+                      {source.url && (
+                        <a
+                          href={source.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="mt-2 block truncate text-xs text-primary hover:underline"
+                        >
+                          {source.url}
+                        </a>
+                      )}
                     </div>
-                  )
+                  ))
+                ) : (
+                  <div className="p-5 text-sm text-muted-foreground">
+                    No sources returned.
+                  </div>
                 )}
               </div>
-            </div>
-          </section>
-
-          {/* Research Notes */}
-          {result.research.research_notes.length > 0 && (
-            <section className="rounded-lg border bg-card p-5">
-              <h2 className="font-semibold">
-                Research Notes
-              </h2>
-
-              <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-muted-foreground">
-                {result.research.research_notes.map(
-                  (note, index) => (
-                    <li key={index}>{note}</li>
-                  )
-                )}
-              </ul>
             </section>
-          )}
 
-          {/* Sources */}
-          <section className="space-y-4">
-            <div>
-              <h2 className="text-lg font-semibold">
-                Research Sources
-              </h2>
+            {/* Research Notes */}
+            {result.research_notes &&
+              result.research_notes.length > 0 && (
+                <section className="rounded-xl border bg-card p-5">
+                  <h2 className="font-semibold">Research Notes</h2>
 
-              <p className="text-sm text-muted-foreground">
-                Web pages used for this research run.
-              </p>
-            </div>
+                  <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-muted-foreground">
+                    {result.research_notes.map((note, index) => (
+                      <li key={index}>{note}</li>
+                    ))}
+                  </ul>
+                </section>
+              )}
 
-            <div className="grid gap-3">
-              {result.sources.map((source) => (
-                <div
-                  key={source.source_id}
-                  className="rounded-lg border bg-card p-4"
-                >
-                  <div className="flex flex-col gap-2">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="rounded-full border px-2 py-1 text-xs font-medium">
-                        {source.source_id}
-                      </span>
+            {/* Verification Summary */}
+            {result.verification_summary && (
+              <section className="rounded-xl border bg-card p-5">
+                <h2 className="font-semibold">Verification Summary</h2>
 
-                      <span className="text-sm font-medium">
-                        {source.title}
-                      </span>
-                    </div>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <div className="rounded-lg border p-3">
+                    <p className="text-xs text-muted-foreground">
+                      Phones Found
+                    </p>
+                    <p className="mt-1 text-xl font-bold">
+                      {result.verification_summary.phones_found ?? 0}
+                    </p>
+                  </div>
 
-                    <a
-                      href={source.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="break-all text-sm text-primary underline underline-offset-4"
-                    >
-                      {source.url}
-                    </a>
+                  <div className="rounded-lg border p-3">
+                    <p className="text-xs text-muted-foreground">Verified</p>
+                    <p className="mt-1 text-xl font-bold">
+                      {result.verification_summary.verified_phones ?? 0}
+                    </p>
+                  </div>
+
+                  <div className="rounded-lg border p-3">
+                    <p className="text-xs text-muted-foreground">
+                      Review Required
+                    </p>
+                    <p className="mt-1 text-xl font-bold">
+                      {result.verification_summary.review_required ?? 0}
+                    </p>
+                  </div>
+
+                  <div className="rounded-lg border p-3">
+                    <p className="text-xs text-muted-foreground">
+                      Average Confidence
+                    </p>
+                    <p className="mt-1 text-xl font-bold">
+                      {result.verification_summary.average_confidence ?? 0}
+                    </p>
                   </div>
                 </div>
-              ))}
-            </div>
-          </section>
 
-          {/* Validation */}
-          <section className="rounded-lg border bg-card p-5">
-            <h2 className="font-semibold">
-              Safety Validation
-            </h2>
+                {result.verification_summary.confidence_system && (
+                  <p className="mt-4 text-xs text-muted-foreground">
+                    System:{" "}
+                    {result.verification_summary.confidence_system}
+                  </p>
+                )}
+              </section>
+            )}
 
-            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <div className="rounded-md border p-3">
-                <p className="text-xs text-muted-foreground">
-                  Anti-hallucination
-                </p>
+            {/* Validation */}
+            <section className="rounded-xl border bg-card p-5">
+              <h2 className="font-semibold">Safety Validation</h2>
 
-                <p className="mt-1 font-medium">
-                  {result.validation.anti_hallucination
-                    ? "Enabled"
-                    : "Disabled"}
-                </p>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <ValidationItem
+                  label="Source Verification"
+                  value={result.validation?.source_verification}
+                />
+
+                <ValidationItem
+                  label="Confidence Scoring"
+                  value={result.validation?.confidence_scoring}
+                />
+
+                <ValidationItem
+                  label="Date Aware"
+                  value={result.validation?.date_aware}
+                />
+
+                <ValidationItem
+                  label="Database Write"
+                  value={result.validation?.database_write}
+                />
               </div>
+            </section>
 
-              <div className="rounded-md border p-3">
-                <p className="text-xs text-muted-foreground">
-                  Evidence required
-                </p>
+            {/* Credit Saver */}
+            <section className="rounded-xl border bg-card p-5">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <h2 className="font-semibold">Credit Saver</h2>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {result.usage?.note ||
+                      "One Tavily search is used per research request."}
+                  </p>
+                </div>
 
-                <p className="mt-1 font-medium">
-                  {result.validation.evidence_required
-                    ? "Yes"
-                    : "No"}
-                </p>
+                <span className="rounded-full border px-3 py-1 text-xs">
+                  {result.usage?.credit_saver ? "Enabled" : "Unknown"}
+                </span>
               </div>
-
-              <div className="rounded-md border p-3">
-                <p className="text-xs text-muted-foreground">
-                  Date aware
-                </p>
-
-                <p className="mt-1 font-medium">
-                  {result.validation.date_aware
-                    ? "Enabled"
-                    : "Not reported"}
-                </p>
-              </div>
-
-              <div className="rounded-md border p-3">
-                <p className="text-xs text-muted-foreground">
-                  Database write
-                </p>
-
-                <p className="mt-1 font-medium">
-                  {result.validation.database_write
-                    ? "Enabled"
-                    : "Disabled"}
-                </p>
-              </div>
-            </div>
-          </section>
-        </>
-      )}
-
-      {/* Initial State */}
-      {!result && !loading && !error && (
-        <section className="rounded-lg border border-dashed p-10 text-center">
-          <h2 className="font-medium">
-            Ready to research
-          </h2>
-
-          <p className="mt-1 text-sm text-muted-foreground">
-            Enter a custom request or select the options
-            above, then click “Run Research”.
-          </p>
-        </section>
-      )}
+            </section>
+          </>
+        )}
+      </div>
     </main>
+  );
+}
+
+function ValidationItem({
+  label,
+  value,
+}: {
+  label: string;
+  value?: boolean;
+}) {
+  return (
+    <div className="rounded-lg border p-3">
+      <p className="text-xs text-muted-foreground">{label}</p>
+
+      <p className="mt-1 font-semibold">
+        {value === true ? "Yes" : value === false ? "No" : "—"}
+      </p>
+    </div>
   );
 }
