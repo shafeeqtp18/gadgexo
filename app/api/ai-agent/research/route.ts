@@ -286,9 +286,70 @@ function hasAvailabilityEvidence(
   return sources.some((source) => {
     const content = normalizeForMatch(source.content);
 
+    // The exact phone model must appear in the source.
     if (!content.includes(name)) {
       return false;
     }
+
+    // Strong availability signals only.
+    // Generic words such as "India" or "available" alone
+    // are not sufficient evidence.
+    const strongAvailabilityTerms = [
+      "available in india",
+      "available now in india",
+      "available for purchase in india",
+      "available to buy in india",
+      "buy now",
+      "in stock",
+      "add to cart",
+      "purchase in india",
+      "buy in india",
+      "order in india",
+      "sale in india",
+      "sales in india",
+      "launched in india",
+      "official samsung india",
+    ];
+
+    const hasStrongAvailability = strongAvailabilityTerms.some((term) =>
+      content.includes(term)
+    );
+
+    if (!hasStrongAvailability) {
+      return false;
+    }
+
+    // Future-only statements must not be treated as current availability.
+    const futureTerms = [
+      "coming soon",
+      "will be available",
+      "to be available",
+      "available from",
+      "available starting",
+      "goes on sale",
+      "sale starts",
+      "pre order",
+      "preorder",
+    ];
+
+    const hasFutureSignal = futureTerms.some((term) =>
+      content.includes(term)
+    );
+
+    // Allow genuine current purchase signals to override
+    // a future-related phrase in the same source.
+    if (
+      hasFutureSignal &&
+      !content.includes("in stock") &&
+      !content.includes("buy now") &&
+      !content.includes("add to cart")
+    ) {
+      return false;
+    }
+
+    return true;
+  });
+}
 
     const availabilityTerms = [
       "available",
