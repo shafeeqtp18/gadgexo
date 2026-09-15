@@ -286,14 +286,10 @@ function hasAvailabilityEvidence(
   return sources.some((source) => {
     const content = normalizeForMatch(source.content);
 
-    // The exact phone model must appear in the source.
     if (!content.includes(name)) {
       return false;
     }
 
-    // Strong availability signals only.
-    // Generic words such as "India" or "available" alone
-    // are not sufficient evidence.
     const strongAvailabilityTerms = [
       "available in india",
       "available now in india",
@@ -319,7 +315,6 @@ function hasAvailabilityEvidence(
       return false;
     }
 
-    // Future-only statements must not be treated as current availability.
     const futureTerms = [
       "coming soon",
       "will be available",
@@ -336,8 +331,6 @@ function hasAvailabilityEvidence(
       content.includes(term)
     );
 
-    // Allow genuine current purchase signals to override
-    // a future-related phrase in the same source.
     if (
       hasFutureSignal &&
       !content.includes("in stock") &&
@@ -348,26 +341,6 @@ function hasAvailabilityEvidence(
     }
 
     return true;
-  });
-}
-
-    const availabilityTerms = [
-      "available",
-      "buy now",
-      "in stock",
-      "add to cart",
-      "purchase",
-      "launched in india",
-      "available in india",
-      "india",
-      "pre order",
-      "preorder",
-      "coming soon",
-    ];
-
-    return availabilityTerms.some((term) =>
-      content.includes(term)
-    );
   });
 }
 
