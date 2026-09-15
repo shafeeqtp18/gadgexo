@@ -15,7 +15,7 @@ export async function GET() {
 
   try {
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
       {
         method: "POST",
         headers: {
@@ -41,7 +41,8 @@ export async function GET() {
       return NextResponse.json(
         {
           success: false,
-          error: data?.error?.message ?? "Gemini API request failed",
+          error:
+            data?.error?.message ?? "Gemini API request failed",
         },
         { status: response.status }
       );
@@ -52,14 +53,17 @@ export async function GET() {
 
     return NextResponse.json({
       success: true,
-      model: "gemini-2.5-flash-lite",
+      model: "gemini-2.5-flash",
       response: text,
     });
   } catch (error) {
     return NextResponse.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : "Unknown error",
+        error:
+          error instanceof Error
+            ? error.message
+            : "Unknown error",
       },
       { status: 500 }
     );
