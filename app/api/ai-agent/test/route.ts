@@ -15,7 +15,7 @@ export async function GET() {
 
   try {
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`,
       {
         method: "POST",
         headers: {
@@ -53,7 +53,7 @@ export async function GET() {
 
     return NextResponse.json({
       success: true,
-      model: "gemini-2.5-flash",
+      model: "gemini-3.6-flash",
       response: text,
     });
   } catch (error) {
