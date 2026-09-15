@@ -22,7 +22,7 @@ type ResearchPhone = {
   notes: string;
 };
 
-function cleanJsonText(text: string) {
+function cleanJsonText(text: string): string {
   return text
     .replace(/^```json\s*/i, "")
     .replace(/^```\s*/i, "")
@@ -37,14 +37,20 @@ export async function GET() {
 
     if (!geminiKey) {
       return NextResponse.json(
-        { success: false, error: "GEMINI_API_KEY is missing" },
+        {
+          success: false,
+          error: "GEMINI_API_KEY is missing",
+        },
         { status: 500 }
       );
     }
 
     if (!tavilyKey) {
       return NextResponse.json(
-        { success: false, error: "TAVILY_API_KEY is missing" },
+        {
+          success: false,
+          error: "TAVILY_API_KEY is missing",
+        },
         { status: 500 }
       );
     }
@@ -137,7 +143,7 @@ STRICT ANTI-HALLUCINATION RULES:
 6. A price may ONLY be returned when the price is explicitly present in a source.
 7. If price evidence is missing, use null.
 8. "available" may ONLY be used when the source provides evidence that the
-   phone is available/launched/sold in India.
+   phone is available, launched, or sold in India.
 9. If India availability is unclear, use "uncertain".
 10. If India availability cannot be established from the supplied sources,
     use "not_found".
@@ -157,6 +163,7 @@ STRICT ANTI-HALLUCINATION RULES:
 20. It is better to return fewer phones than to fabricate one.
 
 SOURCE QUALITY:
+
 - high = official manufacturer or strong Indian retailer/current authoritative source
 - medium = established technology publication/database
 - low = weak, old, aggregator, or unclear source
@@ -208,7 +215,11 @@ ${sourceText}
           contents: [
             {
               role: "user",
-              parts: [{ text: prompt }],
+              parts: [
+                {
+                  text: prompt,
+                },
+              ],
             },
           ],
           generationConfig: {
@@ -253,7 +264,7 @@ ${sourceText}
     // 3. PARSE STRUCTURED JSON
     // ------------------------------------------------------------
 
-    let research;
+    let research: any;
 
     try {
       research = JSON.parse(cleanJsonText(generatedText));
@@ -270,10 +281,10 @@ ${sourceText}
     }
 
     // ------------------------------------------------------------
-    // 4. BASIC SERVER-SIDE VALIDATION
+    // 4. SERVER-SIDE VALIDATION
     // ------------------------------------------------------------
 
-    const validSourceIds = new Set(
+    const validSourceIds = new Set<string>(
       sources.map((source) => source.source_id)
     );
 
@@ -290,24 +301,37 @@ ${sourceText}
         continue;
       }
 
-      const sourceIds = Array.isArray(phone.source_ids)
-        ? phone.source_ids.filter((id: unknown) =>
-            typeof id === "string" && validSourceIds.has(id)
+      const sourceIds: string[] = Array.isArray(phone.source_ids)
+        ? phone.source_ids.filter(
+            (id: unknown): id is string =>
+              typeof id === "string" && validSourceIds.has(id)
           )
         : [];
 
-      const evidence = Array.isArray(phone.evidence)
+      const evidence: {
+        source_id: string;
+        claim: string;
+      }[] = Array.isArray(phone.evidence)
         ? phone.evidence.filter(
-            (item: any) =>
-              item &&
-              typeof item.source_id === "string" &&
-              validSourceIds.has(item.source_id) &&
-              typeof item.claim === "string" &&
-              item.claim.trim().length > 0
+            (
+              item: unknown
+            ): item is {
+              source_id: string;
+              claim: string;
+            } =>
+              typeof item === "object" &&
+              item !== null &&
+              typeof (item as { source_id?: unknown }).source_id ===
+                "string" &&
+              validSourceIds.has(
+                (item as { source_id: string }).source_id
+              ) &&
+              typeof (item as { claim?: unknown }).claim === "string" &&
+              (item as { claim: string }).claim.trim().length > 0
           )
         : [];
 
-      // A phone without source evidence is rejected.
+      // Reject phones without actual source evidence.
       if (sourceIds.length === 0 || evidence.length === 0) {
         continue;
       }
@@ -340,7 +364,7 @@ ${sourceText}
         brand: phone.brand.trim(),
         availability_in_india: availability,
         price_inr: price,
-        source_ids: [...new Set(sourceIds)],
+        source_ids: Array.from(new Set<string>(sourceIds)),
         evidence,
         notes:
           typeof phone.notes === "string"
