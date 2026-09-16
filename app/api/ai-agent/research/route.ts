@@ -1,4 +1,11 @@
 import { NextResponse } from "next/server";
+import { createClient } from "@/lib/supabase/server";
+import {
+  createAgentRun,
+  completeAgentRun,
+  createAgentAction,
+  createReviewItem,
+} from "@/lib/db/agent";
 
 const DEFAULT_QUERY =
   "Find the latest Samsung smartphones available in India.";
@@ -249,11 +256,12 @@ function hasExplicitPriceEvidence(
       return false;
     }
 
-    return priceVariants.some((variant) =>
-      content.includes(variant.toLowerCase()) ||
-      normalizedContent.includes(
-        normalizeForMatch(variant)
-      )
+    return priceVariants.some(
+      (variant) =>
+        content.includes(variant.toLowerCase()) ||
+        normalizedContent.includes(
+          normalizeForMatch(variant)
+        )
     );
   });
 }
@@ -307,9 +315,10 @@ function hasAvailabilityEvidence(
       "official samsung india",
     ];
 
-    const hasStrongAvailability = strongAvailabilityTerms.some((term) =>
-      content.includes(term)
-    );
+    const hasStrongAvailability =
+      strongAvailabilityTerms.some((term) =>
+        content.includes(term)
+      );
 
     if (!hasStrongAvailability) {
       return false;
@@ -354,7 +363,14 @@ function hasDateEvidence(
   }
 
   const name = normalizeForMatch(phone.name);
-  const dateText = date;
+
+  const year = date.slice(0, 4);
+  const month = date.slice(5, 7);
+  const day = date.slice(8, 10);
+
+  if (!year || !month || !day) {
+    return false;
+  }
 
   return sources.some((source) => {
     const content = normalizeForMatch(source.content);
@@ -363,26 +379,15 @@ function hasDateEvidence(
       return false;
     }
 
-    const year = dateText.slice(0, 4);
-    const month = dateText.slice(5, 7);
-    const day = dateText.slice(8, 10);
-
-    if (!year || !month || !day) {
-      return false;
-    }
-
     return (
-      content.includes(year) &&
-      (
-        content.includes(
-          `${year} ${month} ${day}`
-        ) ||
-        content.includes(
-          `${day} ${month} ${year}`
-        ) ||
-        content.includes(
-          `${month} ${day} ${year}`
-        )
+      content.includes(
+        `${year} ${month} ${day}`
+      ) ||
+      content.includes(
+        `${day} ${month} ${year}`
+      ) ||
+      content.includes(
+        `${month} ${day} ${year}`
       )
     );
   });
@@ -522,10 +527,10 @@ function buildPhoneVerification(
     ).size >= 2;
 
   let overallScore = Math.round(
-    modelScore * 0.30 +
-      priceScore * 0.20 +
-      availabilityScore * 0.30 +
-      dateScore * 0.20
+    modelScore * 0.3 +
+      priceScore * 0.2 +
+      availabilityScore * 0.3 +
+      dateScore * 0.2
   );
 
   if (multipleSources) {
@@ -616,17 +621,20 @@ function buildPhoneVerification(
       availabilityEvidence &&
       verifiedSources.length > 0,
 
-    overall_score: overallScore,
+    overall_score:
+      overallScore,
 
     overall_level:
       confidenceLevel(overallScore),
 
-    review_required: reviewRequired,
+    review_required:
+      reviewRequired,
 
     model: {
       value: phone.name,
       score: modelScore,
-      level: confidenceLevel(modelScore),
+      level:
+        confidenceLevel(modelScore),
       reason: modelEvidence
         ? "Model name matched against supplied source content."
         : "Model name could not be directly matched against supplied source content.",
@@ -637,8 +645,12 @@ function buildPhoneVerification(
         phone.price_inr === null
           ? "not_found"
           : `INR ${phone.price_inr}`,
+
       score: priceScore,
-      level: confidenceLevel(priceScore),
+
+      level:
+        confidenceLevel(priceScore),
+
       reason:
         phone.price_inr === null
           ? "No price was accepted because no numerical price was available."
@@ -650,11 +662,15 @@ function buildPhoneVerification(
     india_availability: {
       value:
         phone.availability_in_india,
-      score: availabilityScore,
+
+      score:
+        availabilityScore,
+
       level:
         confidenceLevel(
           availabilityScore
         ),
+
       reason: availabilityEvidence
         ? "Availability has supporting India-market language."
         : "Direct India availability evidence is weak or missing.",
@@ -665,8 +681,13 @@ function buildPhoneVerification(
         phone.launch_date ||
         phone.india_launch_date ||
         "not_found",
-      score: dateScore,
-      level: confidenceLevel(dateScore),
+
+      score:
+        dateScore,
+
+      level:
+        confidenceLevel(dateScore),
+
       reason:
         dateProvided &&
         (
@@ -685,6 +706,66 @@ function buildPhoneVerification(
 }
 
 async function runResearch(query: string) {
+  // ============================================================
+  // 0. STAFF AUTHENTICATION
+  // ============================================================
+
+  const supabase = createClient();
+
+  const {
+    data: {
+      user,
+    },
+    error: userError,
+  } = await supabase.auth.getUser();
+
+  if (userError || !user) {
+    return NextResponse.json(
+      {
+        success: false,
+        error:
+          "Authentication required",
+      },
+      {
+        status: 401,
+      }
+    );
+  }
+
+  const {
+    data: profile,
+    error: profileError,
+  } = await supabase
+    .from("profiles")
+    .select(
+      "id, email, name, role"
+    )
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (
+    profileError ||
+    !profile ||
+    ![
+      "editor",
+      "moderator",
+      "admin",
+    ].includes(profile.role)
+  ) {
+    return NextResponse.json(
+      {
+        success: false,
+        error:
+          "Staff access required",
+      },
+      {
+        status: 403,
+      }
+    );
+  }
+
+  let agentRunId: string | null = null;
+
   const geminiKey =
     process.env.GEMINI_API_KEY;
 
@@ -698,7 +779,9 @@ async function runResearch(query: string) {
         error:
           "GEMINI_API_KEY is missing",
       },
-      { status: 500 }
+      {
+        status: 500,
+      }
     );
   }
 
@@ -709,7 +792,9 @@ async function runResearch(query: string) {
         error:
           "TAVILY_API_KEY is missing",
       },
-      { status: 500 }
+      {
+        status: 500,
+      }
     );
   }
 
@@ -725,17 +810,23 @@ async function runResearch(query: string) {
       "https://api.tavily.com/search",
       {
         method: "POST",
+
         headers: {
           "Content-Type":
             "application/json",
         },
+
         body: JSON.stringify({
           api_key: tavilyKey,
           query,
-          search_depth: "basic",
-          max_results: MAX_RESULTS,
-          include_answer: false,
+          search_depth:
+            "basic",
+          max_results:
+            MAX_RESULTS,
+          include_answer:
+            false,
         }),
+
         cache: "no-store",
       }
     );
@@ -750,7 +841,9 @@ async function runResearch(query: string) {
         stage: "tavily",
         error: errorText,
       },
-      { status: 502 }
+      {
+        status: 502,
+      }
     );
   }
 
@@ -762,27 +855,38 @@ async function runResearch(query: string) {
       (tavilyData.results ||
         []) as TavilyResult[]
     )
-      .map((item, index) => ({
-        source_id:
-          `source_${index + 1}`,
+      .map(
+        (
+          item,
+          index
+        ) => ({
+          source_id:
+            `source_${index + 1}`,
 
-        title:
-          item.title ||
-          "Untitled source",
+          title:
+            item.title ||
+            "Untitled source",
 
-        url:
-          item.url || "",
+          url:
+            item.url ||
+            "",
 
-        content:
-          (item.content || "").slice(
-            0,
-            MAX_CONTENT_PER_SOURCE
-          ),
-      }))
+          content:
+            (
+              item.content ||
+              ""
+            ).slice(
+              0,
+              MAX_CONTENT_PER_SOURCE
+            ),
+        })
+      )
       .filter(
         (source) =>
-          source.url.length > 0 &&
-          source.content.length > 0
+          source.url.length >
+            0 &&
+          source.content.length >
+            0
       );
 
   // ============================================================
@@ -841,7 +945,7 @@ CORE RULES
 6. Search-result titles alone are NOT evidence.
 
 7. A price may ONLY be returned when the numerical price is explicitly
-   present in supplied source content.
+present in supplied source content.
 
 8. If price evidence is missing, return null.
 
@@ -975,14 +1079,17 @@ ${sourceText}
       `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${geminiKey}`,
       {
         method: "POST",
+
         headers: {
           "Content-Type":
             "application/json",
         },
+
         body: JSON.stringify({
           contents: [
             {
               role: "user",
+
               parts: [
                 {
                   text: prompt,
@@ -990,12 +1097,15 @@ ${sourceText}
               ],
             },
           ],
+
           generationConfig: {
             temperature: 0,
+
             responseMimeType:
               "application/json",
           },
         }),
+
         cache: "no-store",
       }
     );
@@ -1010,7 +1120,9 @@ ${sourceText}
         stage: "gemini",
         error: errorText,
       },
-      { status: 502 }
+      {
+        status: 502,
+      }
     );
   }
 
@@ -1029,7 +1141,9 @@ ${sourceText}
         error:
           "Gemini returned no text",
       },
-      { status: 502 }
+      {
+        status: 502,
+      }
     );
   }
 
@@ -1040,9 +1154,12 @@ ${sourceText}
   let research: ResearchResult;
 
   try {
-    research = JSON.parse(
-      cleanJsonText(generatedText)
-    ) as ResearchResult;
+    research =
+      JSON.parse(
+        cleanJsonText(
+          generatedText
+        )
+      ) as ResearchResult;
   } catch {
     return NextResponse.json(
       {
@@ -1052,7 +1169,9 @@ ${sourceText}
           "Gemini returned invalid JSON",
         raw: generatedText,
       },
-      { status: 502 }
+      {
+        status: 502,
+      }
     );
   }
 
@@ -1182,9 +1301,10 @@ ${sourceText}
       ) &&
       phone.price_inr > 0
     ) {
-      price = Math.round(
-        phone.price_inr
-      );
+      price =
+        Math.round(
+          phone.price_inr
+        );
     }
 
     const launchDate =
@@ -1203,8 +1323,8 @@ ${sourceText}
         ? phone.india_launch_date.trim()
         : null;
 
-    const validatedPhone: ResearchPhone =
-      {
+    const validatedPhone:
+      ResearchPhone = {
         name:
           phone.name.trim(),
 
@@ -1256,6 +1376,7 @@ ${sourceText}
 
   research = {
     query,
+
     research_date:
       researchDate,
 
@@ -1358,13 +1479,237 @@ ${sourceText}
       : 0;
 
   // ============================================================
-  // 7. FINAL RESPONSE
+  // 7. PHASE 11D DATABASE PERSISTENCE
+  // ============================================================
+
+  try {
+    agentRunId =
+      await createAgentRun({
+        agentName:
+          "GadGexo AI Research Agent",
+
+        runType:
+          "manual_research",
+
+        triggeredBy:
+          user.id,
+      });
+
+    for (const phone of research.phones) {
+      const verification =
+        phone.verification;
+
+      const reviewRequired =
+        verification
+          ?.review_required ===
+        true;
+
+      const verified =
+        verification
+          ?.verified === true;
+
+      const actionStatus:
+        | "pending"
+        | "approved"
+        | "rejected"
+        | "auto_applied" =
+        reviewRequired
+          ? "pending"
+          : verified
+            ? "approved"
+            : "pending";
+
+      const actionId =
+        await createAgentAction({
+          agentRunId,
+
+          actionType:
+            "research_proposal",
+
+          entityType:
+            "phone_research",
+
+          entityId:
+            null,
+
+          previousData:
+            null,
+
+          proposedData: {
+            name:
+              phone.name,
+
+            brand:
+              phone.brand,
+
+            availability_in_india:
+              phone.availability_in_india,
+
+            price_inr:
+              phone.price_inr,
+
+            launch_date:
+              phone.launch_date,
+
+            india_launch_date:
+              phone.india_launch_date,
+
+            source_ids:
+              phone.source_ids,
+
+            evidence:
+              phone.evidence,
+
+            notes:
+              phone.notes,
+
+            verification:
+              verification ??
+              null,
+          },
+
+          confidenceScore:
+            verification
+              ? verification.overall_score /
+                100
+              : null,
+
+          status:
+            actionStatus,
+        });
+
+      if (reviewRequired) {
+        const reasons =
+          verification?.reasons
+            ?.filter(
+              (reason) =>
+                typeof reason ===
+                  "string" &&
+                reason.trim()
+                  .length > 0
+            )
+            .join(" ");
+
+        await createReviewItem({
+          agentActionId:
+            actionId,
+
+          entityType:
+            "phone_research",
+
+          entityId:
+            null,
+
+          reason:
+            reasons ||
+            "AI research result requires manual review.",
+
+          priority:
+            verification &&
+            verification.overall_score <
+              50
+              ? 10
+              : 5,
+        });
+      }
+    }
+
+    await completeAgentRun(
+      agentRunId,
+      "completed",
+      {
+        query,
+
+        research_date:
+          researchDate,
+
+        phones_found:
+          research.phones.length,
+
+        verified_phones:
+          verifiedPhones.length,
+
+        review_required:
+          reviewPhones.length,
+
+        average_confidence:
+          averageConfidence,
+
+        source_count:
+          sources.length,
+
+        persistence:
+          "research_results_persisted_as_agent_actions",
+
+        products_updated:
+          false,
+
+        prices_updated:
+          false,
+
+        specifications_updated:
+          false,
+      }
+    );
+  } catch (persistenceError) {
+    console.error(
+      "Phase 11D persistence error:",
+      persistenceError
+    );
+
+    if (agentRunId) {
+      try {
+        await completeAgentRun(
+          agentRunId,
+          "failed",
+          {
+            error:
+              persistenceError instanceof
+                Error
+                ? persistenceError.message
+                : "Database persistence failed",
+          }
+        );
+      } catch (completeError) {
+        console.error(
+          "Failed to mark agent run as failed:",
+          completeError
+        );
+      }
+    }
+
+    return NextResponse.json(
+      {
+        success: false,
+
+        stage:
+          "database_persistence",
+
+        error:
+          persistenceError instanceof
+            Error
+            ? persistenceError.message
+            : "Database persistence failed",
+
+        research,
+
+        persisted:
+          false,
+      },
+      {
+        status: 500,
+      }
+    );
+  }
+
+  // ============================================================
+  // 8. FINAL RESPONSE
   // ============================================================
 
   return NextResponse.json({
     success: true,
 
-    phase: "11C",
+    phase: "11D",
 
     query,
 
@@ -1398,10 +1743,34 @@ ${sourceText}
         "deterministic source verification + evidence matching",
 
       database_write:
-        false,
+        true,
     },
 
-    persisted: false,
+    persisted:
+      true,
+
+    agent_run_id:
+      agentRunId,
+
+    persistence: {
+      agent_run:
+        true,
+
+      agent_actions:
+        research.phones.length,
+
+      review_queue_items:
+        reviewPhones.length,
+
+      products_updated:
+        false,
+
+      prices_updated:
+        false,
+
+      specifications_updated:
+        false,
+    },
 
     validation: {
       anti_hallucination:
@@ -1423,11 +1792,12 @@ ${sourceText}
         true,
 
       database_write:
-        false,
+        true,
     },
 
     usage: {
-      tavily_searches: 1,
+      tavily_searches:
+        1,
 
       tavily_max_results:
         MAX_RESULTS,
@@ -1465,7 +1835,9 @@ export async function GET() {
             ? error.message
             : "Unknown server error",
       },
-      { status: 500 }
+      {
+        status: 500,
+      }
     );
   }
 }
@@ -1519,7 +1891,9 @@ export async function POST(
             ? error.message
             : "Unknown server error",
       },
-      { status: 500 }
+      {
+        status: 500,
+      }
     );
   }
 }
