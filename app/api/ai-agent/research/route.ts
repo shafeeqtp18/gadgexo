@@ -1617,19 +1617,14 @@ await completeAgentRun(
   agentRunId,
   "completed",
   {
-    total: research.phones.length,
-
+    discovered: research.phones.length,
+    processed: research.phones.length,
     created: verifiedPhones.length,
-
     updated: 0,
-
-    skipped:
-      research.phones.length -
-      verifiedPhones.length,
-
+    skipped: research.phones.length - verifiedPhones.length,
+    reviewRequired: reviewPhones.length,
+    conflicts: 0,
     errors: 0,
-
-    duration_ms: 0,
   }
 );
     
