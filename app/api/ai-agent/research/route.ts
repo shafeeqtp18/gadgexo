@@ -1613,44 +1613,26 @@ ${sourceText}
         });
       }
     }
+await completeAgentRun(
+  agentRunId,
+  "completed",
+  {
+    total: research.phones.length,
 
-    await completeAgentRun(
-      agentRunId,
-      "completed",
-      {
-        query,
+    created: verifiedPhones.length,
 
-        research_date:
-          researchDate,
+    updated: 0,
 
-        phones_found:
-          research.phones.length,
+    skipped:
+      research.phones.length -
+      verifiedPhones.length,
 
-        verified_phones:
-          verifiedPhones.length,
+    errors: 0,
 
-        review_required:
-          reviewPhones.length,
-
-        average_confidence:
-          averageConfidence,
-
-        source_count:
-          sources.length,
-
-        persistence:
-          "research_results_persisted_as_agent_actions",
-
-        products_updated:
-          false,
-
-        prices_updated:
-          false,
-
-        specifications_updated:
-          false,
-      }
-    );
+    duration_ms: 0,
+  }
+);
+    
   } catch (persistenceError) {
     console.error(
       "Phase 11D persistence error:",
